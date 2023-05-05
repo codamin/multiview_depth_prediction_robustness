@@ -1,0 +1,43 @@
+wandb_version: 1
+
+learning_rate:
+  desc: null
+  value: 0.0001
+architecture:
+  desc: null
+  value: DPT
+dataset:
+  desc: null
+  value: ''
+epochs:
+  desc: null
+  value: 2
+_wandb:
+  desc: null
+  value:
+    python_version: 3.9.6
+    cli_version: 0.15.1
+    framework: huggingface
+    huggingface_version: 4.26.1
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1683316421.525606
+    t:
+      1:
+      - 1
+      - 11
+      - 49
+      - 55
+      2:
+      - 1
+      - 11
+      - 49
+      - 55
+      3:
+      - 16
+      - 23
+      4: 3.9.6
+      5: 0.15.1
+      6: 4.26.1
+      8:
+      - 5
