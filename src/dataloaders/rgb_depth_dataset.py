@@ -57,7 +57,6 @@ class RGBDepthDataset(Dataset):
         return inp_imgs, out_imgs, masks
 
 
-
     def _get_num_seqs_frames(self):
         n_seqs = 0
         list_n_frames = []
@@ -83,11 +82,3 @@ class RGBDepthDataset(Dataset):
         list_n_frames.append(int(self.inp_files[-1].split('_')[3])+1)
 
         return n_seqs+1, list_n_frames, dict_inp_filename, dict_out_filename
-    
-    def _group_data(self):
-        pass
-
-
-
-ds = RGBDepthDataset(root_dir='../../../matterport') 
-inp_imgs, out_imgs, masks = ds.__getitem__(0)
