@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-cuda0 = torch.device('cuda:1')
 
 class VNL_Loss(nn.Module):
     """

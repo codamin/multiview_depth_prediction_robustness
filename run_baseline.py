@@ -2,14 +2,15 @@
 import wandb
 import argparse
 import yaml
-from PIL import Image
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+
 from src.models import DPTDepth
 import src.checkpoint as checkpoint
 from  src.losses import virtual_normal_loss, midas_loss
+import src.utils as utils
 
 def get_args():
     config_parser = argparse.ArgumentParser()
@@ -126,7 +127,7 @@ def main(args):
             step += 1
 
 @torch.no_grad()
-def validate(args, model, dataloader_validation, criterion, wandb, step):
+def validate(args, model, dataloader_validation, criterion, wandb, step, n_images=20):
 
     losses = []
     original_images = []
@@ -142,8 +143,21 @@ def validate(args, model, dataloader_validation, criterion, wandb, step):
         loss_val = criterion(predicted_depth, depth, mask_valid)
         losses.append(loss_val.item())
 
+        if len(original_images) < n_images:
+            original_images.append(x)
+            depth_images.append(depth)
+            predicted_depths.append(predicted_depth)
+
     # log metrics
     wandb.log({f"val loss ({args.loss_fn})": sum(losses)/len(losses)}, step=step)
+
+    pil_original_image = utils.rgb_tensor2PIL(original_images)
+    pil_depth_image = utils.depth_tensor2PIL(depth_images)
+    pil_predicted_image = utils.depth_tensor2PIL(predicted_depths)
+
+    utils.save_images(pil_original_image, path=args.output_path, name=f'{step:07d}_orig')
+    utils.save_images(pil_depth_image, path=args.output_path, name=f'{step:07d}_depth')
+    utils.save_images(pil_predicted_image, path=args.output_path, name=f'{step:07d}_prediction')
     
 
 if __name__=="__main__":
