@@ -44,23 +44,24 @@ def rgb_tensor2PIL(x, return_list=False):
         return images
     
     n_images = len(images)
-    return _make_grid(images, row=math.ceil(n_images/5), cols=5, mode='RGB')
+    return _make_grid(images, rows=math.ceil(n_images/5), cols=5, mode='RGB')
 
 def depth_tensor2PIL(x, return_list=False):
     x_list = _listify(x)
     images = []
 
     for xi in x_list:
-        xi = xi.cpu().permute(1,2,0).clamp(0,1)
+        xi = xi[0].cpu().clamp(0,1)
         images.append(Image.fromarray((255 * xi.numpy()).astype(np.uint8)))
 
     if return_list:
         return images
     
     n_images = len(images)
-    return _make_grid(images, row=math.ceil(n_images/5), cols=5, mode='L')
+    return _make_grid(images, rows=math.ceil(n_images/5), cols=5, mode='L')
 
 def save_images(images, path, name):
+    os.makedirs(os.path.join(path, 'samples'), exist_ok=True)
     if isinstance(images, list):
         for i, image in enumerate(images):
             image.save(os.path.join(path, 'samples', f'{name}:{i}.png'))

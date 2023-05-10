@@ -6,10 +6,13 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
 
 from src.models import DPTDepth
+from src.dataloaders import RGBDepthDataset
+from src.losses import virtual_normal_loss, midas_loss
+
 import src.checkpoint as checkpoint
-from  src.losses import virtual_normal_loss, midas_loss
 import src.utils as utils
 
 def get_args():
@@ -58,14 +61,14 @@ def create_loss(loss_fn, device):
     elif loss_fn == 'l1':
         return lambda prediction, ground_truth, mask_valid: F.l1_loss(prediction, ground_truth)
     elif loss_fn == 'midas':
-        vnl_loss = virtual_normal_loss.VNL_Loss(1.0, 1.0, (384, 384)).to(device)
-        midas_loss = midas_loss.MidasLoss(alpha=0.1).to(device)
+        _vnl_loss = virtual_normal_loss.VNL_Loss(1.0, 1.0, (384, 384)).to(device)
+        _midas_loss = midas_loss.MidasLoss(alpha=0.1).to(device)
         def criterion(prediction, ground_truth, mask_valid):
             # Midas Loss
-            _, ssi_loss, reg_loss = midas_loss(prediction, ground_truth, mask_valid)
+            _, ssi_loss, reg_loss = _midas_loss(prediction, ground_truth, mask_valid)
 
             # Virtual Normal Loss
-            vn_loss = vnl_loss(prediction, ground_truth)
+            vn_loss = _vnl_loss(prediction, ground_truth)
 
             return ssi_loss + 0.1 * reg_loss + 10 * vn_loss
         return criterion
@@ -75,8 +78,17 @@ def create_loss(loss_fn, device):
 
 def main(args):
 
-    dataloader_train = None
-    dataloader_validation = None
+    dataloader_train = DataLoader(
+                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=2),
+                            shuffle=True,
+                            batch_size=args.batch_size,
+                            num_workers=args.num_workers,
+                        )
+    dataloader_validation = DataLoader(
+                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=2),
+                            batch_size=args.batch_size,
+                            num_workers=args.num_workers,
+                        )
 
     device = torch.device(args.device)
 
@@ -85,7 +97,7 @@ def main(args):
          # set the wandb project where this run will be logged
         entity=args.wandb_entity,
         project=args.wandb_project,
-        name=args.wandb_group,
+        name=args.wandb_run_name,
     
         # track hyperparameters and run metadata
         config=args
@@ -100,15 +112,21 @@ def main(args):
 
     criterion = create_loss(args.loss_fn, device)
 
+    validate(args, model, dataloader_validation, criterion, wandb, step=0)
+
     model.train()
     for epoch in range(start_epoch, args.epochs):
         step = epoch * len(dataloader_train)
         for x, depth, mask_valid in dataloader_train:
+            
+            x = x.reshape(-1, *x.shape[-3:])
+            depth = depth.reshape(-1, *depth.shape[-3:])
+            mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:])
 
             optimizer.zero_grad()
 
             outputs = model(pixel_values=x)
-            predicted_depth = outputs["predicted_depth"]
+            predicted_depth = outputs["predicted_depth"][:, None]
 
             loss_train = criterion(predicted_depth, depth, mask_valid)
 
@@ -120,7 +138,7 @@ def main(args):
             wandb.log({f"train loss ({args.loss_fn})": loss_train}, step=step)
 
             #eval every 10 steps
-            if step % args.eval_freq == 0:
+            if step != 0 and step % args.eval_freq == 0:
                 validate(args, model, dataloader_validation, criterion, wandb, step)
                 model.train()
 
@@ -137,8 +155,12 @@ def validate(args, model, dataloader_validation, criterion, wandb, step, n_image
     model.eval()
     for x, depth, mask_valid in dataloader_validation:
 
+        x = x.reshape(-1, *x.shape[-3:])
+        depth = depth.reshape(-1, *depth.shape[-3:])
+        mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:])
+
         outputs = model(pixel_values=x)
-        predicted_depth = outputs["predicted_depth"]
+        predicted_depth = outputs["predicted_depth"][:, None]
 
         loss_val = criterion(predicted_depth, depth, mask_valid)
         losses.append(loss_val.item())
@@ -155,9 +177,9 @@ def validate(args, model, dataloader_validation, criterion, wandb, step, n_image
     pil_depth_image = utils.depth_tensor2PIL(depth_images)
     pil_predicted_image = utils.depth_tensor2PIL(predicted_depths)
 
-    utils.save_images(pil_original_image, path=args.output_path, name=f'{step:07d}_orig')
-    utils.save_images(pil_depth_image, path=args.output_path, name=f'{step:07d}_depth')
-    utils.save_images(pil_predicted_image, path=args.output_path, name=f'{step:07d}_prediction')
+    utils.save_images(pil_original_image, path=args.output_dir, name=f'{step:07d}_orig')
+    utils.save_images(pil_depth_image, path=args.output_dir, name=f'{step:07d}_depth')
+    utils.save_images(pil_predicted_image, path=args.output_dir, name=f'{step:07d}_prediction')
     
 
 if __name__=="__main__":

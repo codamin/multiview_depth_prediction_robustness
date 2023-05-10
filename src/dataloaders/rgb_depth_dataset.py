@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 
 class RGBDepthDataset(Dataset):
-    def __init__(self, root_dir, transform=None, n_frames=16):
+    def __init__(self, root_dir, transform=None, n_frames=16, image_size=384):
         self.root_dir = root_dir
         self.transform = transform
         self.n_frames = n_frames
@@ -14,6 +14,11 @@ class RGBDepthDataset(Dataset):
         self.out_dir = os.path.join(root_dir, 'depth_euclidean')
         self.inp_files = sorted(os.listdir(self.inp_dir))
         self.out_files = sorted(os.listdir(self.out_dir)) 
+
+        self.resize_and_to_tensor = transforms.Compose([
+            transforms.Resize((image_size, image_size)),
+            transforms.ToTensor()
+        ])
 
         self.n_seqs, self.list_n_frames, self.dict_inp_filename, self.dict_out_filename = self._get_num_seqs_frames()
 
@@ -35,24 +40,25 @@ class RGBDepthDataset(Dataset):
         # get the filenames of the sequence and load the input images
         inp_filenames = [self.dict_inp_filename[idx][i] for i in seq_idx]
         inp_imgs = [Image.open(os.path.join(self.inp_dir, filename)) for filename in inp_filenames]
-        inp_imgs = [transforms.ToTensor()(img) for img in inp_imgs]
+        inp_imgs = [self.resize_and_to_tensor(img) * 2 - 1 for img in inp_imgs]
         # load the output images
         out_filenames = [self.dict_out_filename[idx][i] for i in seq_idx]
         # load the mono channel images
         out_imgs = [Image.open(os.path.join(self.out_dir, filename)) for filename in out_filenames]
-        out_imgs = [transforms.ToTensor()(img) for img in out_imgs]
+        out_imgs = [self.resize_and_to_tensor(img) for img in out_imgs]
         
         # apply transform
         if self.transform:
             inp_imgs = [self.transform(img) for img in inp_imgs]
 
         inp_imgs = torch.stack(inp_imgs)
-        out_imgs = torch.stack(out_imgs) / 65535.0
-        print(out_imgs[0,0,0,0])
+        out_imgs = torch.stack(out_imgs)
 
         # generate mask from out_imgs such that when one cell of out_imgs is 1, the corresponding cell in inp_imgs is False
         masks = torch.ones_like(out_imgs, dtype=torch.bool)
-        masks[out_imgs == 1.0] = 0
+        masks[out_imgs == 65535.0] = 0
+
+        out_imgs = 1 / (out_imgs + 1e-05)
 
         return inp_imgs, out_imgs, masks
 
@@ -82,3 +88,11 @@ class RGBDepthDataset(Dataset):
         list_n_frames.append(int(self.inp_files[-1].split('_')[3])+1)
 
         return n_seqs+1, list_n_frames, dict_inp_filename, dict_out_filename
+    
+if __name__=="__main__":
+    import matplotlib.pyplot as plt
+
+    ds = RGBDepthDataset(root_dir='../../data', n_frames=2)
+    img, depth, mask = ds[0]
+    plt.imshow(img[0].permute(1,2,0))
+    plt.show()
