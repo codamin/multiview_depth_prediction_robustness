@@ -24,11 +24,15 @@ def get_args():
 
     parser.add_argument('--data_path', default=None, type=str)
     parser.add_argument('--eval_data_path', default=None, type=str)
-    parser.add_argument('--num_workers', default=10, type=int)
-
-    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--batch_size_eval', default=16, type=int)
+    parser.add_argument('--num_workers', default=10, type=int)
+
+    parser.add_argument('--corruptions', default=None, type=str)
+    parser.add_argument('--eval_corruptions', default=None, type=str)
+    parser.add_argument('--n_frames', default=10, type=int)
+
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--eval_freq', default=1000, type=int)
     parser.add_argument('--save_weight_freq', default=5, type=int)
     parser.add_argument('--output_dir', default='results/')
@@ -43,7 +47,6 @@ def get_args():
     parser.add_argument('--wandb_project', default="multiview-robustness-cs-503", type=str)
     parser.add_argument('--wandb_entity', default="aav", type=str)
     parser.add_argument('--wandb_run_name', default=None, type=str)
-    parser.add_argument('--show_user_warnings', default=False, action='store_true')
 
     args_config, remaining = config_parser.parse_known_args()
     if args_config.config:
@@ -92,16 +95,18 @@ def main(args):
 
     device = torch.device(args.device)
 
-    # start a new wandb run to track this script
-    wandb.init(
-         # set the wandb project where this run will be logged
-        entity=args.wandb_entity,
-        project=args.wandb_project,
-        name=args.wandb_run_name,
-    
-        # track hyperparameters and run metadata
-        config=args
-    )
+
+    if args.log_wandb:
+        # start a new wandb run to track this script
+        wandb.init(
+            # set the wandb project where this run will be logged
+            entity=args.wandb_entity,
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+        
+            # track hyperparameters and run metadata
+            config=args
+        )
 
     # define the model
     model = DPTDepth.from_pretrained("Intel/dpt-large")
@@ -116,6 +121,7 @@ def main(args):
 
     model.train()
     for epoch in range(start_epoch, args.epochs):
+        
         step = epoch * len(dataloader_train)
         for x, depth, mask_valid in dataloader_train:
             
@@ -135,17 +141,21 @@ def main(args):
             optimizer.step()
 
             # log metrics
-            wandb.log({f"train loss ({args.loss_fn})": loss_train}, step=step)
+            if args.log_wandb: wandb.log({f"train loss ({args.loss_fn})": loss_train}, step=step)
 
             #eval every 10 steps
             if step != 0 and step % args.eval_freq == 0:
-                validate(args, model, dataloader_validation, criterion, wandb, step)
+                validate(args, model, dataloader_validation, criterion, step)
                 model.train()
 
             step += 1
+        
+        if (epoch + 1) % args.save_weight_freq == 0:
+            checkpoint.save_checkpoint(args.output_dir, epoch, model, optimizer)
+            
 
 @torch.no_grad()
-def validate(args, model, dataloader_validation, criterion, wandb, step, n_images=20):
+def validate(args, model, dataloader_validation, criterion, step, n_images=20):
 
     losses = []
     original_images = []
@@ -171,7 +181,7 @@ def validate(args, model, dataloader_validation, criterion, wandb, step, n_image
             predicted_depths.append(predicted_depth)
 
     # log metrics
-    wandb.log({f"val loss ({args.loss_fn})": sum(losses)/len(losses)}, step=step)
+    if args.log_wandb: wandb.log({f"val loss ({args.loss_fn})": sum(losses)/len(losses)}, step=step)
 
     pil_original_image = utils.rgb_tensor2PIL(original_images)
     pil_depth_image = utils.depth_tensor2PIL(depth_images)
