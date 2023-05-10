@@ -20,7 +20,7 @@ def _fog_3d(x, depth, fog_strength=150):
     a = x.mean()
     return x * t + a * (1-t)
 
-def _pixelate(x, resize=12):
+def _pixelate(x, resize=8):
     _, h, w = x.shape
     x = x[:,::resize,::resize]
     return F.interpolate(x[None,:], size=(h,w))[0]
