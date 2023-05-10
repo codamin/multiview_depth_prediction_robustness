@@ -4,14 +4,50 @@ import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
+import torch.nn.functional as F
+
+
+def _gaussian_noise(x, scale=0.5):
+    return x + torch.randn_like(x) * scale
+
+def _gaussian_blur(x, sigma=5):
+    k = 4 * sigma + 1
+    return transforms.functional.gaussian_blur(x, kernel_size=k, sigma=sigma)
+
+def _fog_3d(x, depth, fog_strength=150):
+    depth = depth/depth.max()
+    t = torch.exp(-fog_strength * depth)
+    a = x.mean()
+    return x * t + a * (1-t)
+
+def _pixelate(x, resize=12):
+    _, h, w = x.shape
+    x = x[:,::resize,::resize]
+    return F.interpolate(x[None,:], size=(h,w))[0]
+
+def _identity(x):
+    return x
+
+transforms = {
+    'gaussian_noise': _gaussian_noise,
+    'gaussian_blur': _gaussian_blur,
+    'fog_3d': _fog_3d,
+    'pixelate': _pixelate,
+    'identity': _identity,
+}
 
 class RGBDepthDataset(Dataset):
     def __init__(self, root_dir, transform=None, n_frames=16, image_size=384):
         self.root_dir = root_dir
-        self.transform = transform
+        if transform is None:
+            self.transform = transforms
+        else:
+            if isinstance(transform, str):
+                transform = [transform]
+            self.transform = {k: transforms[k] for k in transform}
         self.n_frames = n_frames
         self.inp_dir = os.path.join(root_dir, 'rgb')
-        self.out_dir = os.path.join(root_dir, 'depth_euclidean')
+        self.out_dir = os.path.join(root_dir, 'depth_zbuffer')
         self.inp_files = sorted(os.listdir(self.inp_dir))
         self.out_files = sorted(os.listdir(self.out_dir)) 
 
@@ -48,8 +84,11 @@ class RGBDepthDataset(Dataset):
         out_imgs = [self.resize_and_to_tensor(img) for img in out_imgs]
         
         # apply transform
-        if self.transform:
-            inp_imgs = [self.transform(img) for img in inp_imgs]
+        transform_key = np.random.choiced(list(self.transform.keys()))
+        if transform_key == 'fog_3d':
+            inp_imgs = [self.transform[transform_key](img, depth) for img, depth in zip(inp_imgs, out_imgs)]
+        else:
+            inp_imgs = [self.transform[transform_key](img) for img in inp_imgs]
 
         inp_imgs = torch.stack(inp_imgs)
         out_imgs = torch.stack(out_imgs)
@@ -58,7 +97,7 @@ class RGBDepthDataset(Dataset):
         masks = torch.ones_like(out_imgs, dtype=torch.bool)
         masks[out_imgs == 65535.0] = 0
 
-        out_imgs = 1 / (out_imgs + 1e-05)
+        out_imgs = 10000 / (out_imgs + 1e-05)
 
         return inp_imgs, out_imgs, masks
 
