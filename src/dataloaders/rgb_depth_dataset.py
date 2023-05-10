@@ -6,11 +6,14 @@ from torch.utils.data import Dataset
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 
+torch.manual_seed(0)
+np.random.seed(0)
 
-def _gaussian_noise(x, scale=0.5):
+
+def _gaussian_noise(x, scale=0.8):
     return x + torch.randn_like(x) * scale
 
-def _gaussian_blur(x, sigma=5):
+def _gaussian_blur(x, sigma=8):
     k = 4 * sigma + 1
     return transforms.functional.gaussian_blur(x, kernel_size=k, sigma=sigma)
 
@@ -28,7 +31,7 @@ def _pixelate(x, resize=8):
 def _identity(x):
     return x
 
-transforms = {
+corruptions = {
     'gaussian_noise': _gaussian_noise,
     'gaussian_blur': _gaussian_blur,
     'fog_3d': _fog_3d,
@@ -40,11 +43,11 @@ class RGBDepthDataset(Dataset):
     def __init__(self, root_dir, transform=None, n_frames=16, image_size=384):
         self.root_dir = root_dir
         if transform is None:
-            self.transform = transforms
+            self.transform = corruptions
         else:
             if isinstance(transform, str):
                 transform = [transform]
-            self.transform = {k: transforms[k] for k in transform}
+            self.transform = {k: corruptions[k] for k in transform}
         self.n_frames = n_frames
         self.inp_dir = os.path.join(root_dir, 'rgb')
         self.out_dir = os.path.join(root_dir, 'depth_zbuffer')
@@ -84,7 +87,7 @@ class RGBDepthDataset(Dataset):
         out_imgs = [self.resize_and_to_tensor(img) for img in out_imgs]
         
         # apply transform
-        transform_key = np.random.choiced(list(self.transform.keys()))
+        transform_key = np.random.choice(list(self.transform.keys()))
         if transform_key == 'fog_3d':
             inp_imgs = [self.transform[transform_key](img, depth) for img, depth in zip(inp_imgs, out_imgs)]
         else:

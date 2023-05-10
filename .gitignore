@@ -179,3 +179,4 @@ pyrightconfig.json
 /data/rgb
 /data/depth_euclidean
 /wandb
+/results

@@ -3,6 +3,7 @@ import wandb
 import argparse
 import yaml
 from pathlib import Path
+from tqdm import tqdm
 
 import torch
 import torch.nn.functional as F
@@ -117,13 +118,13 @@ def main(args):
 
     criterion = create_loss(args.loss_fn, device)
 
-    validate(args, model, dataloader_validation, criterion, wandb, step=0)
+    validate(args, model, dataloader_validation, criterion, step=0)
 
     model.train()
     for epoch in range(start_epoch, args.epochs):
         
         step = epoch * len(dataloader_train)
-        for x, depth, mask_valid in dataloader_train:
+        for x, depth, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
             
             x = x.reshape(-1, *x.shape[-3:])
             depth = depth.reshape(-1, *depth.shape[-3:])
