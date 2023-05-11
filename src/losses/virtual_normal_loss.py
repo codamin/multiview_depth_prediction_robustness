@@ -59,13 +59,13 @@ class VNL_Loss(nn.Module):
         np.random.shuffle(p3)
 
         p1_x = p1 % self.input_size[1]
-        p1_y = (p1 / self.input_size[1]).astype(np.int)
+        p1_y = (p1 / self.input_size[1]).astype(int)
 
         p2_x = p2 % self.input_size[1]
-        p2_y = (p2 / self.input_size[1]).astype(np.int)
+        p2_y = (p2 / self.input_size[1]).astype(int)
 
         p3_x = p3 % self.input_size[1]
-        p3_y = (p3 / self.input_size[1]).astype(np.int)
+        p3_y = (p3 / self.input_size[1]).astype(int)
         p123 = {'p1_x': p1_x, 'p1_y': p1_y, 'p2_x': p2_x, 'p2_y': p2_y, 'p3_x': p3_x, 'p3_y': p3_y}
         return p123
 

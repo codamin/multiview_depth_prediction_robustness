@@ -51,8 +51,8 @@ class RGBDepthDataset(Dataset):
         self.n_frames = n_frames
         self.inp_dir = os.path.join(root_dir, 'rgb')
         self.out_dir = os.path.join(root_dir, 'depth_zbuffer')
-        self.inp_files = sorted(os.listdir(self.inp_dir))
-        self.out_files = sorted(os.listdir(self.out_dir)) 
+        self.inp_files = sorted(os.listdir(self.inp_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3])))
+        self.out_files = sorted(os.listdir(self.out_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) 
 
         self.resize_and_to_tensor = transforms.Compose([
             transforms.Resize((image_size, image_size)),
@@ -68,7 +68,7 @@ class RGBDepthDataset(Dataset):
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-
+        
         max_sample_idx = self.list_n_frames[idx] - self.n_frames
         
         # sample a point randomly between 0 and max_sample_idx
