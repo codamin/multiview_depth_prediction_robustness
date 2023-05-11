@@ -32,6 +32,7 @@ def get_args():
     parser.add_argument('--corruptions', default=None, type=str)
     parser.add_argument('--eval_corruptions', default=None, type=str)
     parser.add_argument('--n_frames', default=10, type=int)
+    parser.add_argument('--img_size', default=384, type=int)
 
     parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--eval_freq', default=1000, type=int)
@@ -65,7 +66,7 @@ def create_loss(loss_fn, device):
     elif loss_fn == 'l1':
         return lambda prediction, ground_truth, mask_valid: F.l1_loss(prediction, ground_truth)
     elif loss_fn == 'midas':
-        _vnl_loss = virtual_normal_loss.VNL_Loss(1.0, 1.0, (384, 384)).to(device)
+        _vnl_loss = virtual_normal_loss.VNL_Loss(1.0, 1.0, (args.img_size, args.img_size)).to(device)
         _midas_loss = midas_loss.MidasLoss(alpha=0.1).to(device)
         def criterion(prediction, ground_truth, mask_valid):
             # Midas Loss
@@ -83,13 +84,13 @@ def create_loss(loss_fn, device):
 def main(args):
 
     dataloader_train = DataLoader(
-                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=2),
+                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=args.n_frames, image_size=args.img_size),
                             shuffle=True,
                             batch_size=args.batch_size,
                             num_workers=args.num_workers,
                         )
     dataloader_validation = DataLoader(
-                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=2),
+                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=args.n_frames, image_size=args.img_size),
                             batch_size=args.batch_size,
                             num_workers=args.num_workers,
                         )
@@ -110,7 +111,7 @@ def main(args):
         )
 
     # define the model
-    model = DPTDepth.from_pretrained("Intel/dpt-large")
+    model = DPTDepth.from_pretrained("Intel/dpt-large").to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # load if any checkpoint exists
@@ -118,7 +119,7 @@ def main(args):
 
     criterion = create_loss(args.loss_fn, device)
 
-    validate(args, model, dataloader_validation, criterion, step=0)
+    # validate(args, model, dataloader_validation, criterion, device=device, step=0)
 
     model.train()
     for epoch in range(start_epoch, args.epochs):
@@ -126,9 +127,9 @@ def main(args):
         step = epoch * len(dataloader_train)
         for x, depth, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
             
-            x = x.reshape(-1, *x.shape[-3:])
-            depth = depth.reshape(-1, *depth.shape[-3:])
-            mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:])
+            x = x.reshape(-1, *x.shape[-3:]).to(device)
+            depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
+            mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:]).to(device)
 
             optimizer.zero_grad()
 
@@ -156,7 +157,7 @@ def main(args):
             
 
 @torch.no_grad()
-def validate(args, model, dataloader_validation, criterion, step, n_images=20):
+def validate(args, model, dataloader_validation, criterion, step, device, n_images=20):
 
     losses = []
     original_images = []
@@ -164,22 +165,26 @@ def validate(args, model, dataloader_validation, criterion, step, n_images=20):
     predicted_depths = []
 
     model.eval()
-    for x, depth, mask_valid in dataloader_validation:
 
-        x = x.reshape(-1, *x.shape[-3:])
-        depth = depth.reshape(-1, *depth.shape[-3:])
-        mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:])
+    with tqdm(total=len(dataloader_validation)) as progress_bar:
+        for x, depth, mask_valid in tqdm(dataloader_validation):
 
-        outputs = model(pixel_values=x)
-        predicted_depth = outputs["predicted_depth"][:, None]
+                x = x.reshape(-1, *x.shape[-3:]).to(device)
+                depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
+                mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:]).to(device)
 
-        loss_val = criterion(predicted_depth, depth, mask_valid)
-        losses.append(loss_val.item())
+                outputs = model(pixel_values=x)
+                predicted_depth = outputs["predicted_depth"][:, None]
 
-        if len(original_images) < n_images:
-            original_images.append(x)
-            depth_images.append(depth)
-            predicted_depths.append(predicted_depth)
+                loss_val = criterion(predicted_depth, depth, mask_valid)
+                losses.append(loss_val.item())
+
+                if len(original_images) < n_images:
+                    original_images.append(x)
+                    depth_images.append(depth)
+                    predicted_depths.append(predicted_depth)
+        progress_bar.update(1) # update progress
+    
 
     # log metrics
     if args.log_wandb: wandb.log({f"val loss ({args.loss_fn})": sum(losses)/len(losses)}, step=step)
