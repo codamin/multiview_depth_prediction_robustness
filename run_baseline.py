@@ -119,7 +119,7 @@ def main(args):
 
     criterion = create_loss(args.loss_fn, device)
 
-    # validate(args, model, dataloader_validation, criterion, device=device, step=0)
+    validate(args, model, dataloader_validation, criterion, device=device, step=0)
 
     model.train()
     for epoch in range(start_epoch, args.epochs):

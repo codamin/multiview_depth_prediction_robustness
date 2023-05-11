@@ -1,13 +1,13 @@
 data_path: '../datasets/train'
 eval_data_path: '../datasets/val'
-batch_size: 2
-batch_size_eval: 2
+batch_size: 1
+batch_size_eval: 1
 num_workers: 5
 
 corruptions: None
 eval_corruptions: None
-n_frames: 8
-img_size: 192
+n_frames: 1
+img_size: 32
 
 epochs: 100
 eval_freq: 200
