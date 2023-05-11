@@ -125,7 +125,8 @@ def main(args):
     for epoch in range(start_epoch, args.epochs):
         
         step = epoch * len(dataloader_train)
-        for x, depth, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
+        pbar = tqdm(dataloader_train, desc=f"Epoch {epoch}")
+        for x, depth, mask_valid in pbar:
             
             x = x.reshape(-1, *x.shape[-3:]).to(device)
             depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
@@ -147,10 +148,11 @@ def main(args):
 
             #eval every 10 steps
             if step != 0 and step % args.eval_freq == 0:
-                validate(args, model, dataloader_validation, criterion, step)
+                validate(args, model, dataloader_validation, criterion, device=device, step=step)
                 model.train()
 
             step += 1
+            pbar.set_description(f"Epoch {epoch} - loss: {loss_train.item():.4f}")
         
         if (epoch + 1) % args.save_weight_freq == 0:
             checkpoint.save_checkpoint(args.output_dir, epoch, model, optimizer)
@@ -166,24 +168,25 @@ def validate(args, model, dataloader_validation, criterion, step, device, n_imag
 
     model.eval()
 
-    with tqdm(total=len(dataloader_validation)) as progress_bar:
-        for x, depth, mask_valid in tqdm(dataloader_validation):
+    pbar = tqdm(dataloader_validation, desc=f"Validating")
+    for x, depth, mask_valid in pbar:
 
-                x = x.reshape(-1, *x.shape[-3:]).to(device)
-                depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
-                mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:]).to(device)
+        x = x.reshape(-1, *x.shape[-3:]).to(device)
+        depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
+        mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:]).to(device)
 
-                outputs = model(pixel_values=x)
-                predicted_depth = outputs["predicted_depth"][:, None]
+        outputs = model(pixel_values=x)
+        predicted_depth = outputs["predicted_depth"][:, None]
 
-                loss_val = criterion(predicted_depth, depth, mask_valid)
-                losses.append(loss_val.item())
+        loss_val = criterion(predicted_depth, depth, mask_valid)
+        losses.append(loss_val.item())
 
-                if len(original_images) < n_images:
-                    original_images.append(x)
-                    depth_images.append(depth)
-                    predicted_depths.append(predicted_depth)
-        progress_bar.update(1) # update progress
+        if len(original_images) < n_images:
+            original_images.append(x)
+            depth_images.append(depth)
+            predicted_depths.append(predicted_depth)
+        pbar.set_description(f"Validating (loss {loss_val.item():.4f})")
+
     
 
     # log metrics

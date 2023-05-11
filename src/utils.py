@@ -36,7 +36,7 @@ def rgb_tensor2PIL(x, return_list=False):
     images = []
 
     for xi in x_list:
-        xi = xi.cpu().permute(1,2,0).clamp(-1,1)
+        xi = xi.permute(1,2,0).clamp(-1,1).cpu()
         xi = (xi + 1) / 2
         images.append(Image.fromarray((255 * xi.numpy()).astype(np.uint8)))
 
@@ -52,7 +52,7 @@ def depth_tensor2PIL(x, return_list=False):
 
     for xi in x_list:
         xi = xi/xi.max()
-        xi = xi[0].cpu().clamp(0,1)
+        xi = xi[0].clamp(0,1).cpu()
         images.append(Image.fromarray((255 * xi.numpy()).astype(np.uint8)))
 
     if return_list:
