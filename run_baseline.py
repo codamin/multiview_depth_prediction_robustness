@@ -37,6 +37,9 @@ def get_args():
     parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--eval_freq', default=1000, type=int)
     parser.add_argument('--save_weight_freq', default=5, type=int)
+    parser.add_argument('--restart', default=True, action='store_true')
+    parser.add_argument('--no_restart', action='store_false', dest='restart')
+    parser.set_defaults(restart=True)
     parser.add_argument('--output_dir', default='results/')
     parser.add_argument('--device', default='cuda')
 
@@ -115,7 +118,9 @@ def main(args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # load if any checkpoint exists
-    start_epoch = checkpoint.load_checkpoint(args.output_dir, model, optimizer)
+    start_epoch = 0
+    if not args.restart:
+        start_epoch = checkpoint.load_checkpoint(args.output_dir, model, optimizer)
 
     criterion = create_loss(args.loss_fn, device)
 
@@ -125,6 +130,7 @@ def main(args):
     for epoch in range(start_epoch, args.epochs):
         
         step = epoch * len(dataloader_train)
+        wandb.log({f"Epoch": epoch}, step=step)
         for x, depth, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
             
             x = x.reshape(-1, *x.shape[-3:]).to(device)
@@ -147,7 +153,7 @@ def main(args):
 
             #eval every 10 steps
             if step != 0 and step % args.eval_freq == 0:
-                validate(args, model, dataloader_validation, criterion, step)
+                validate(args, model, dataloader_validation, criterion, step, device)
                 model.train()
 
             step += 1
@@ -189,13 +195,15 @@ def validate(args, model, dataloader_validation, criterion, step, device, n_imag
     # log metrics
     if args.log_wandb: wandb.log({f"val loss ({args.loss_fn})": sum(losses)/len(losses)}, step=step)
 
-    pil_original_image = utils.rgb_tensor2PIL(original_images)
-    pil_depth_image = utils.depth_tensor2PIL(depth_images)
-    pil_predicted_image = utils.depth_tensor2PIL(predicted_depths)
+    pil_original_images = utils.rgb_tensor2PIL(original_images)
+    pil_depth_images = utils.depth_tensor2PIL(depth_images)
+    pil_predicted_images = utils.depth_tensor2PIL(predicted_depths)
 
-    utils.save_images(pil_original_image, path=args.output_dir, name=f'{step:07d}_orig')
-    utils.save_images(pil_depth_image, path=args.output_dir, name=f'{step:07d}_depth')
-    utils.save_images(pil_predicted_image, path=args.output_dir, name=f'{step:07d}_prediction')
+    utils.log_images(pil_original_images, pil_depth_images, pil_predicted_images, wandb)
+
+    utils.save_images(pil_original_images, path=args.output_dir, name=f'{step:07d}_orig', mode='RGB')
+    utils.save_images(pil_depth_images, path=args.output_dir, name=f'{step:07d}_depth', mode='L')
+    utils.save_images(pil_predicted_images, path=args.output_dir, name=f'{step:07d}_prediction', mode='L')
     
 
 if __name__=="__main__":

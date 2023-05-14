@@ -31,7 +31,7 @@ def _make_grid(images, rows, cols, mode):
         grid.paste(image, box=(i%cols*w, i//cols*h))
     return grid
 
-def rgb_tensor2PIL(x, return_list=False):
+def rgb_tensor2PIL(x):
     x_list = _listify(x)
     images = []
 
@@ -40,13 +40,9 @@ def rgb_tensor2PIL(x, return_list=False):
         xi = (xi + 1) / 2
         images.append(Image.fromarray((255 * xi.numpy()).astype(np.uint8)))
 
-    if return_list:
-        return images
-    
-    n_images = len(images)
-    return _make_grid(images, rows=math.ceil(n_images/5), cols=5, mode='RGB')
+    return images
 
-def depth_tensor2PIL(x, return_list=False):
+def depth_tensor2PIL(x):
     x_list = _listify(x)
     images = []
 
@@ -55,17 +51,24 @@ def depth_tensor2PIL(x, return_list=False):
         xi = xi[0].cpu().clamp(0,1)
         images.append(Image.fromarray((255 * xi.numpy()).astype(np.uint8)))
 
-    if return_list:
-        return images
-    
-    n_images = len(images)
-    return _make_grid(images, rows=math.ceil(n_images/5), cols=5, mode='L')
+    return images
 
-def save_images(images, path, name):
+def save_images(images, path, name, mode, make_grid=True):
     os.makedirs(os.path.join(path, 'samples'), exist_ok=True)
-    if isinstance(images, list):
+
+    if make_grid:
+        n_images = len(images)
+        images = _make_grid(images, rows=math.ceil(n_images/5), cols=5, mode=mode)
+        images.save(os.path.join(path, 'samples', f'{name}.png'))
+    else:
         for i, image in enumerate(images):
             image.save(os.path.join(path, 'samples', f'{name}:{i}.png'))
-    else:
-        images.save(os.path.join(path, 'samples', f'{name}.png'))
+
+def log_images(orig_images, depth_images, predicted_image, wandb, n_images=5):
+    n_images = min(len(orig_images), n_images)
+    images = orig_images[:n_images] + depth_images[:n_images] + predicted_image[:n_images]
+    image = _make_grid(images, 3, n_images, 'RGB')
+    wandb.log({"images": wandb.Image(image)})
+    
+
 
