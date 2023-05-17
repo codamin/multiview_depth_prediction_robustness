@@ -160,8 +160,6 @@ def main(args):
             predicted_depth = torch.cat(predicted_outputs, axis=0)
             mask_valid = torch.cat(masks, axis=0)
             depth = torch.cat(depths, axis=0)
-        
-            predicted_depth = outputs["predicted_depth"][:, None]
 
             loss_train = criterion(predicted_depth, depth, mask_valid)
 

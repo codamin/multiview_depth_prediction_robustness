@@ -73,7 +73,7 @@ class RGBDepthDataset(Dataset):
         
         # sample a point randomly between 0 and max_sample_idx
         sample_idx = np.random.randint(0, max_sample_idx)
-
+        
         # generate a sequence of indices starting from sample_idx using pytorch
         seq_idx = torch.arange(sample_idx, sample_idx+self.n_frames)
         # get the filenames of the sequence and load the input images
