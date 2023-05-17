@@ -1,5 +1,5 @@
-data_path: '../data/rgb_test'
-eval_data_path: '../data/rgb_test'
+data_path: '../datasets/train'
+eval_data_path: '../datasets/val'
 batch_size: 1
 batch_size_eval: 1
 num_workers: 5

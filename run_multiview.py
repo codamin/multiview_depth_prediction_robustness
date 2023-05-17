@@ -132,20 +132,34 @@ def main(args):
         step = epoch * len(dataloader_train)
         wandb.log({f"Epoch": epoch}, step=step)
         for x, depth, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
+
+            depth = depth.to(device)
+            mask_valid = mask_valid.to(device)
+            x = x.to(device)
             
-            # x = x.reshape(-1, *x.shape[-3:]).to(device)
-
-            depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
-            mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:]).to(device)
-
             optimizer.zero_grad()
-
+            
             #initial pass through model
             ks = None
-            for i in range(len(x.shape[1])):
-                outputs = model(pixel_values=x, knowledge_sources=ks)
-                ks = outputs["knowledge_sources"]
+            predicted_outputs = []
+            depths = []
+            masks = []
+            inputs = []
 
+
+            for i in range(x.shape[1]):
+                outputs = model(pixel_values=x[:, i], knowledge_sources=ks)
+                ks = outputs["knowledge_sources"]
+                predicted_depth = outputs["predicted_depth"][:, None]
+                inputs.append(x[:, i])
+                predicted_outputs.append(predicted_depth)
+                masks.append(mask_valid[:, i])
+                depths.append(depth[:, i])
+
+            x = torch.cat(inputs, axis=0)
+            predicted_depth = torch.cat(predicted_outputs, axis=0)
+            mask_valid = torch.cat(masks, axis=0)
+            depth = torch.cat(depths, axis=0)
         
             predicted_depth = outputs["predicted_depth"][:, None]
 
@@ -182,17 +196,29 @@ def validate(args, model, dataloader_validation, criterion, step, device, n_imag
     with tqdm(total=len(dataloader_validation)) as progress_bar:
         for x, depth, mask_valid in tqdm(dataloader_validation):
 
-                x = x.reshape(-1, *x.shape[-3:]).to(device)
-                depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
-                mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:]).to(device)
+                depth = depth.to(device)
+                mask_valid = mask_valid.to(device)
+                x = x.to(device)
 
-                # outputs = model(pixel_values=x)
                 ks = None
-                for i in range(len(x.shape[1])):
-                    outputs = model(pixel_values=x, knowledge_sources=ks)
-                    ks = outputs["knowledge_sources"]
+                inputs = []
+                predicted_outputs = []
+                depths = []
+                masks = []
 
-                predicted_depth = outputs["predicted_depth"][:, None]
+                for i in range(x.shape[1]):
+                    outputs = model(pixel_values=x[:, i], knowledge_sources=ks)
+                    ks = outputs["knowledge_sources"]
+                    predicted_depth = outputs["predicted_depth"][:, None]
+                    inputs.append(x[:, i])
+                    predicted_outputs.append(predicted_depth)
+                    masks.append(mask_valid[:, i])
+                    depths.append(depth[:, i])
+
+                x = torch.cat(inputs, axis=0)
+                predicted_depth = torch.cat(predicted_outputs, axis=0)
+                mask_valid = torch.cat(masks, axis=0)
+                depth = torch.cat(depths, axis=0)
 
                 loss_val = criterion(predicted_depth, depth, mask_valid)
                 losses.append(loss_val.item())
