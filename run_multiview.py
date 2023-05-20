@@ -130,7 +130,7 @@ def main(args):
     for epoch in range(start_epoch, args.epochs):
         
         step = epoch * len(dataloader_train)
-        wandb.log({f"Epoch": epoch}, step=step)
+        if args.log_wandb: wandb.log({f"Epoch": epoch}, step=step)
         for x, depth, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
 
             depth = depth.to(device)
