@@ -199,7 +199,7 @@ def validate(args, model, dataloader_validation, criterion, step, device, n_imag
     pil_depth_images = utils.depth_tensor2PIL(depth_images)
     pil_predicted_images = utils.depth_tensor2PIL(predicted_depths)
 
-    utils.log_images(pil_original_images, pil_depth_images, pil_predicted_images, wandb)
+    if args.log_wandb: utils.log_images(pil_original_images, pil_depth_images, pil_predicted_images, wandb)
 
     utils.save_images(pil_original_images, path=args.output_dir, name=f'{step:07d}_orig', mode='RGB')
     utils.save_images(pil_depth_images, path=args.output_dir, name=f'{step:07d}_depth', mode='L')
