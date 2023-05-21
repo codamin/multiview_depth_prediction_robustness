@@ -93,7 +93,7 @@ def main(args):
                             num_workers=args.num_workers,
                         )
     dataloader_validation = DataLoader(
-                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=args.n_frames, image_size=args.img_size),
+                            dataset=RGBDepthDataset(root_dir=args.eval_data_path, n_frames=args.n_frames, image_size=args.img_size),
                             batch_size=args.batch_size,
                             num_workers=args.num_workers,
                         )

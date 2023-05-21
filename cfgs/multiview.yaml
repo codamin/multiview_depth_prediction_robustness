@@ -12,8 +12,8 @@ img_size: 384
 epochs: 100
 eval_freq: 200
 save_weight_freq: 20
-output_dir: 'results/baseline'
-device: 'cuda:0'
+output_dir: 'results/multiview'
+device: 'cuda'
 
 lr: 0.00001
 loss_fn: 'midas'
@@ -21,4 +21,4 @@ loss_fn: 'midas'
 log_wandb: True
 wandb_project: 'multiview-robustness-cs-503'
 wandb_entity: 'aav'
-wandb_run_name: 'baseline'
+wandb_run_name: 'multiview'
