@@ -6,6 +6,29 @@ import torch.nn as nn
 from transformers import DPTForDepthEstimation, DPTModel
 from transformers.models.dpt.modeling_dpt import DPTViTLayer, DPTConfig
 
+class Positional3DEncoder(nn.Module):
+    def __init__(self, depth_size, patch_size, hidden_size):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(depth_size * 3, hidden_size, kernel_size=patch_size, stride=patch_size)
+        self.mlp_layer_1 = nn.Conv2d(hidden_size, hidden_size, kernel_size=1)
+        self.mlp_layer_2 = nn.Conv2d(hidden_size, hidden_size, kernel_size=1)
+        self.zero_init()
+    
+    def forward(self, pos):
+        pos = self.conv(pos)
+        pos = torch.cos(pos)
+        pos = self.mlp_layer_1(pos)
+        pos = torch.selu(pos)
+        pos = self.mlp_layer_2(pos)
+        pos = pos.flatten(2).transpose(1, 2)
+        return pos
+    
+    def zero_init(self):
+        nn.init.zeros_(self.mlp_layer_1.weight)
+        nn.init.zeros_(self.mlp_layer_1.bias)
+        nn.init.zeros_(self.mlp_layer_2.weight)
+        nn.init.zeros_(self.mlp_layer_2.bias)
+
 
 class DPTMultiviewViTEncoder(nn.Module):
     def __init__(self, config: DPTConfig) -> None:
@@ -64,6 +87,9 @@ class DPTMultiviewModel(DPTModel):
         super().__init__(config, add_pooling_layer=add_pooling_layer)
         self.encoder = DPTMultiviewViTEncoder(config)
 
+        if config.pos3d_encoding:
+            self.pos3d_encoder = Positional3DEncoder(depth_size=config.pos3d_depth, patch_size=config.patch_size, hidden_size=config.hidden_size)
+
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -71,6 +97,7 @@ class DPTMultiviewModel(DPTModel):
         self,
         pixel_values: torch.FloatTensor,
         knowledge_sources: Tuple[torch.Tensor],
+        points3d: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -90,6 +117,11 @@ class DPTMultiviewModel(DPTModel):
         embedding_output = self.embeddings(pixel_values, return_dict=True)
 
         embedding_last_hidden_states = embedding_output.last_hidden_states
+
+        if hasattr(self, "pos3d_encoder") and not torch.isnan(points3d).any():
+            pos3d_encoding = self.pos3d_encoder(points3d)
+            print(pos3d_encoding.sum())
+            embedding_last_hidden_states[:, :-1] = embedding_last_hidden_states[:, :-1] + pos3d_encoding
 
         encoder_outputs = self.encoder(
             embedding_last_hidden_states,
@@ -118,14 +150,19 @@ class DPTMultiviewModel(DPTModel):
 
 
 class DPTMultiviewDepth(DPTForDepthEstimation):
-    def __init__(self, config, num_seq_knowledge_source=200):
+    def __init__(self, config, num_seq_knowledge_source=200, pos3d_encoding=True, pos3d_depth=5):
         super().__init__(config)
+
+        if not hasattr(config, "num_seq_knowledge_source"):
+            config.__setattr__("num_seq_knowledge_source", num_seq_knowledge_source)
+        if not hasattr(config, "pos3d_encoding"):
+            config.__setattr__("pos3d_encoding", pos3d_encoding)
+        if not hasattr(config, "pos3d_depth"):
+            config.__setattr__("pos3d_depth", pos3d_depth)
 
         del self.dpt
         self.dpt = DPTMultiviewModel(config, add_pooling_layer=False)
 
-        if not hasattr(config, "num_seq_knowledge_source"):
-            config.__setattr__("num_seq_knowledge_source", num_seq_knowledge_source)
         self.knowledge_sources = nn.ParameterList([torch.rand(1, config.num_seq_knowledge_source, config.hidden_size) for _ in range(config.num_hidden_layers)])
 
         # Initialize weights and apply final processing
@@ -136,6 +173,7 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
         self,
         pixel_values: torch.FloatTensor,
         knowledge_sources: Optional[Tuple[torch.Tensor]] = None,
+        points3d: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -151,6 +189,7 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
         dpt_outputs = self.dpt(
             pixel_values,
             knowledge_sources,
+            points3d,
             head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=True,  # we need the intermediate hidden states
@@ -191,3 +230,8 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
         for ks in self.knowledge_sources:
             ks_tuple = ks_tuple + (ks.expand(batch_size, -1, -1),)
         return ks_tuple
+    
+
+if __name__=='__main__':
+    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large")
+    out = model(torch.zeros((1,3,384,384)), points3d=torch.zeros((1,15,384,384)))

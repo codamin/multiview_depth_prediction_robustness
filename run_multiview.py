@@ -29,6 +29,12 @@ def get_args():
     parser.add_argument('--batch_size_eval', default=16, type=int)
     parser.add_argument('--num_workers', default=10, type=int)
 
+    parser.add_argument('--num_seq_knowledge_source', default=200, type=int)
+    parser.add_argument('--pos3d_encoding', default=True, action='store_true')
+    parser.add_argument('--no_pos3d_encoding', action='store_false', dest='pos3d_encoding')
+    parser.set_defaults(pos3d_encoding=True)
+    parser.add_argument('--pos3d_depth', default=5, type=int)
+
     parser.add_argument('--corruptions', default=None, type=str)
     parser.add_argument('--eval_corruptions', default=None, type=str)
     parser.add_argument('--n_frames', default=10, type=int)
@@ -87,13 +93,25 @@ def create_loss(loss_fn, device):
 def main(args):
 
     dataloader_train = DataLoader(
-                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=args.n_frames, image_size=args.img_size),
+                            dataset=RGBDepthDataset(
+                                root_dir=args.data_path, 
+                                n_frames=args.n_frames, 
+                                image_size=args.img_size, 
+                                depth_size=args.pos3d_depth, 
+                                train_set=True,
+                            ),
                             shuffle=True,
                             batch_size=args.batch_size,
                             num_workers=args.num_workers,
                         )
     dataloader_validation = DataLoader(
-                            dataset=RGBDepthDataset(root_dir=args.eval_data_path, n_frames=args.n_frames, image_size=args.img_size),
+                            dataset=RGBDepthDataset(
+                                root_dir=args.eval_data_path, 
+                                n_frames=args.n_frames, 
+                                image_size=args.img_size, 
+                                depth_size=args.pos3d_depth, 
+                                train_set=False,
+                            ),
                             batch_size=args.batch_size,
                             num_workers=args.num_workers,
                         )
@@ -114,7 +132,11 @@ def main(args):
         )
 
     # define the model
-    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large").to(device)
+    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
+                                              num_seq_knowledge_source=args.num_seq_knowledge_source,
+                                              pos3d_encoding=args.pos3d_encoding,
+                                              pos3d_depth=args.pos3d_depth,
+                                              ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # load if any checkpoint exists
@@ -131,11 +153,12 @@ def main(args):
         
         step = epoch * len(dataloader_train)
         if args.log_wandb: wandb.log({f"Epoch": epoch}, step=step)
-        for x, depth, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
+        for x, depth, camera_frustum, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
 
             depth = depth.to(device)
             mask_valid = mask_valid.to(device)
             x = x.to(device)
+            camera_frustum = camera_frustum.to(device)
             
             optimizer.zero_grad()
             
@@ -148,7 +171,7 @@ def main(args):
 
 
             for i in range(x.shape[1]):
-                outputs = model(pixel_values=x[:, i], knowledge_sources=ks)
+                outputs = model(pixel_values=x[:, i], knowledge_sources=ks, points3d=camera_frustum[:, i])
                 ks = outputs["knowledge_sources"]
                 predicted_depth = outputs["predicted_depth"][:, None]
                 inputs.append(x[:, i])
@@ -182,7 +205,7 @@ def main(args):
             
 
 @torch.no_grad()
-def validate(args, model, dataloader_validation, criterion, step, device, n_images=20):
+def validate(args, model, dataloader_validation, criterion, step, device, n_images=10):
 
     losses = []
     original_images = []
@@ -192,11 +215,12 @@ def validate(args, model, dataloader_validation, criterion, step, device, n_imag
     model.eval()
 
     with tqdm(total=len(dataloader_validation)) as progress_bar:
-        for x, depth, mask_valid in tqdm(dataloader_validation):
+        for x, depth, camera_frustum, mask_valid in tqdm(dataloader_validation):
 
                 depth = depth.to(device)
                 mask_valid = mask_valid.to(device)
                 x = x.to(device)
+                camera_frustum = camera_frustum.to(device)
 
                 ks = None
                 inputs = []
@@ -205,7 +229,7 @@ def validate(args, model, dataloader_validation, criterion, step, device, n_imag
                 masks = []
 
                 for i in range(x.shape[1]):
-                    outputs = model(pixel_values=x[:, i], knowledge_sources=ks)
+                    outputs = model(pixel_values=x[:, i], knowledge_sources=ks, points3d=camera_frustum[:, i])
                     ks = outputs["knowledge_sources"]
                     predicted_depth = outputs["predicted_depth"][:, None]
                     inputs.append(x[:, i])

@@ -178,5 +178,6 @@ pyrightconfig.json
 .DS_Store
 /data/rgb
 /data/depth_euclidean
+/data/point_info
 /wandb
 /results
