@@ -112,7 +112,7 @@ def main(args):
                                 depth_size=args.pos3d_depth, 
                                 train_set=False,
                             ),
-                            batch_size=args.batch_size,
+                            batch_size=args.batch_size_eval,
                             num_workers=args.num_workers,
                         )
 

@@ -15,7 +15,7 @@ np.random.seed(0)
 def _gaussian_noise(x, scale=0.8, severity_idx=None):
     if severity_idx is not None:
         scale = [0.2, 0.5, 0.8, 1.1, 1.4][severity_idx]
-    return x + torch.randn_like(x) * scale
+    return torch.clip(x + torch.randn_like(x) * scale, min=-1, max=1)
 
 def _gaussian_blur(x, sigma=8, severity_idx=None):
     if severity_idx is not None:
@@ -101,7 +101,7 @@ class RGBDepthDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         
-        max_sample_idx = self.list_n_frames[idx] - self.n_frames
+        max_sample_idx = self.list_n_frames[idx] - self.n_frames + 1
         
         # sample a point randomly between 0 and max_sample_idx
         if self.train_set:
@@ -132,14 +132,15 @@ class RGBDepthDataset(Dataset):
         mask_filenames = [self.dict_mask_filename[idx][i] for i in seq_idx]
         # load the mono channel images
         masks = [Image.open(os.path.join(self.mask_dir, filename)) for filename in mask_filenames]
-        masks = [self.resize_and_to_tensor(img) for img in masks]
+        masks = [(self.resize_and_to_tensor(img) < 0.99) for img in masks]
         
         # apply transform
         transform_key = np.random.choice(list(self.transform.keys()))
+        severity_idx_values = np.random.randint(low=0, high=5, size=len(inp_imgs))
         if transform_key == 'fog_3d':
-            inp_imgs = [self.transform[transform_key](img, depth) for img, depth in zip(inp_imgs, out_imgs)]
+            inp_imgs = [self.transform[transform_key](img, depth, severity_idx=siv) for img, depth, siv in zip(inp_imgs, out_imgs, severity_idx_values)]
         else:
-            inp_imgs = [self.transform[transform_key](img) for img in inp_imgs]
+            inp_imgs = [self.transform[transform_key](img, severity_idx=siv) for img, siv in zip(inp_imgs, severity_idx_values)]
 
         inp_imgs = torch.stack(inp_imgs)
         out_imgs = torch.stack(out_imgs)
@@ -199,8 +200,8 @@ class RGBDepthDataset(Dataset):
 if __name__=="__main__":
     import matplotlib.pyplot as plt
 
-    ds = RGBDepthDataset(root_dir='/scratch/izar/aasadi/dataset/data/train', n_frames=4)
-    img, depth, points, mask = ds[1]
+    ds = RGBDepthDataset(root_dir='/scratch/izar/aasadi/dataset/data/test', n_frames=4)
+    img, depth, points, mask = ds[10]
     print(mask.shape, img.shape)
     # plt.imshow((img[0] / 2 + 0.5).permute(1,2,0))
     # plt.show()

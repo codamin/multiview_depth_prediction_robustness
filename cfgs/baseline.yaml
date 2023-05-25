@@ -1,12 +1,12 @@
-data_path: '../datasets/train'
-eval_data_path: '../datasets/val'
-batch_size: 1
+data_path: '/scratch/izar/aasadi/dataset/data/train'
+eval_data_path: '/scratch/izar/aasadi/dataset/data/val'
+batch_size: 2
 batch_size_eval: 1
 num_workers: 5
 
 corruptions: None
 eval_corruptions: None
-n_frames: 10
+n_frames: 4
 img_size: 384
 
 epochs: 100

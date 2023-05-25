@@ -120,7 +120,6 @@ class DPTMultiviewModel(DPTModel):
 
         if hasattr(self, "pos3d_encoder") and not torch.isnan(points3d).any():
             pos3d_encoding = self.pos3d_encoder(points3d)
-            print(pos3d_encoding.sum())
             embedding_last_hidden_states[:, :-1] = embedding_last_hidden_states[:, :-1] + pos3d_encoding
 
         encoder_outputs = self.encoder(
