@@ -65,7 +65,7 @@ def load_camera_info(path):
     return data
 
 class RGBDepthDataset(Dataset):
-    def __init__(self, root_dir, transform=None, n_frames=16, image_size=384, depth_size=5, train_set=True):
+    def __init__(self, root_dir, transform=None, n_frames=16, image_size=384, depth_size=5, train_set=True, small=False):
         self.root_dir = root_dir
         if transform is None:
             self.transform = corruptions
@@ -76,6 +76,7 @@ class RGBDepthDataset(Dataset):
         self.n_frames = n_frames
         self.image_size = image_size
         self.train_set = train_set
+        self.small = small
         self.inp_dir = os.path.join(root_dir, 'rgb')
         self.out_dir = os.path.join(root_dir, 'depth_zbuffer')
         self.mask_dir = os.path.join(root_dir, 'mask_valid')
@@ -95,6 +96,8 @@ class RGBDepthDataset(Dataset):
 
 
     def __len__(self):
+        if self.small:
+            return self.n_seqs // 10
         return self.n_seqs
 
     def __getitem__(self, idx):
@@ -129,10 +132,10 @@ class RGBDepthDataset(Dataset):
         else:
             inp_points = torch.nan
 
-        mask_filenames = [self.dict_mask_filename[idx][i] for i in seq_idx]
-        # load the mono channel images
-        masks = [Image.open(os.path.join(self.mask_dir, filename)) for filename in mask_filenames]
-        masks = [(self.resize_and_to_tensor(img) < 0.99) for img in masks]
+        # mask_filenames = [self.dict_mask_filename[idx][i] for i in seq_idx]
+        # # load the mono channel images
+        # masks = [Image.open(os.path.join(self.mask_dir, filename)) for filename in mask_filenames]
+        # masks = [(self.resize_and_to_tensor(img) < 0.99) for img in masks]
         
         # apply transform
         transform_key = np.random.choice(list(self.transform.keys()))
@@ -145,7 +148,10 @@ class RGBDepthDataset(Dataset):
         inp_imgs = torch.stack(inp_imgs)
         out_imgs = torch.stack(out_imgs)
         inp_points = torch.stack(inp_points)
-        masks = torch.stack(masks)
+        # masks = torch.stack(masks)
+
+        masks = torch.ones_like(out_imgs, dtype=torch.bool)
+        masks[out_imgs == 65535.0] = 0
 
         out_imgs = 10000 / (out_imgs + 1e-05)
 
@@ -200,8 +206,9 @@ class RGBDepthDataset(Dataset):
 if __name__=="__main__":
     import matplotlib.pyplot as plt
 
-    ds = RGBDepthDataset(root_dir='/scratch/izar/aasadi/dataset/data/test', n_frames=4)
+    ds = RGBDepthDataset(root_dir='/scratch/izar/aasadi/dataset/data/train', n_frames=4, small=True)
     img, depth, points, mask = ds[10]
+    print(len(ds))
     print(mask.shape, img.shape)
     # plt.imshow((img[0] / 2 + 0.5).permute(1,2,0))
     # plt.show()

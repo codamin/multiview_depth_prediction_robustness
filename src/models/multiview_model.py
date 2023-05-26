@@ -149,7 +149,7 @@ class DPTMultiviewModel(DPTModel):
 
 
 class DPTMultiviewDepth(DPTForDepthEstimation):
-    def __init__(self, config, num_seq_knowledge_source=200, pos3d_encoding=True, pos3d_depth=5):
+    def __init__(self, config, num_seq_knowledge_source=200, pos3d_encoding=True, pos3d_depth=5, initialize_ks_with_pos_embed=False):
         super().__init__(config)
 
         if not hasattr(config, "num_seq_knowledge_source"):
@@ -162,7 +162,10 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
         del self.dpt
         self.dpt = DPTMultiviewModel(config, add_pooling_layer=False)
 
-        self.knowledge_sources = nn.ParameterList([torch.rand(1, config.num_seq_knowledge_source, config.hidden_size) for _ in range(config.num_hidden_layers)])
+        if initialize_ks_with_pos_embed:
+             self.knowledge_sources = nn.ParameterList([self.dpt.embeddings.position_embeddings.data for _ in range(config.num_hidden_layers)])
+        else:
+            self.knowledge_sources = nn.ParameterList([torch.rand(1, config.num_seq_knowledge_source, config.hidden_size) for _ in range(config.num_hidden_layers)])
 
         # Initialize weights and apply final processing
         self.post_init()

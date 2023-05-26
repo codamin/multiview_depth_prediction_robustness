@@ -28,8 +28,12 @@ def get_args():
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--batch_size_eval', default=16, type=int)
     parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--small', default=False, action='store_true')
+    parser.set_defaults(small=False)
 
     parser.add_argument('--num_seq_knowledge_source', default=200, type=int)
+    parser.add_argument('--initialize_ks_with_pos_embed', default=False, action='store_true')
+    parser.set_defaults(initialize_ks_with_pos_embed=False)
     parser.add_argument('--pos3d_encoding', default=True, action='store_true')
     parser.add_argument('--no_pos3d_encoding', action='store_false', dest='pos3d_encoding')
     parser.set_defaults(pos3d_encoding=True)
@@ -99,6 +103,7 @@ def main(args):
                                 image_size=args.img_size, 
                                 depth_size=args.pos3d_depth, 
                                 train_set=True,
+                                small=args.small,
                             ),
                             shuffle=True,
                             batch_size=args.batch_size,
@@ -111,6 +116,7 @@ def main(args):
                                 image_size=args.img_size, 
                                 depth_size=args.pos3d_depth, 
                                 train_set=False,
+                                small=args.small,
                             ),
                             batch_size=args.batch_size_eval,
                             num_workers=args.num_workers,
@@ -136,6 +142,7 @@ def main(args):
                                               num_seq_knowledge_source=args.num_seq_knowledge_source,
                                               pos3d_encoding=args.pos3d_encoding,
                                               pos3d_depth=args.pos3d_depth,
+                                              initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embed
                                               ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 

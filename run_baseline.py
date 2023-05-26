@@ -28,6 +28,8 @@ def get_args():
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--batch_size_eval', default=16, type=int)
     parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--small', default=False, action='store_true')
+    parser.set_defaults(small=False)
 
     parser.add_argument('--corruptions', default=None, type=str)
     parser.add_argument('--eval_corruptions', default=None, type=str)
@@ -87,14 +89,26 @@ def create_loss(loss_fn, device):
 def main(args):
 
     dataloader_train = DataLoader(
-                            dataset=RGBDepthDataset(root_dir=args.data_path, n_frames=args.n_frames, image_size=args.img_size),
+                            dataset=RGBDepthDataset(
+                                root_dir=args.data_path, 
+                                n_frames=args.n_frames, 
+                                image_size=args.img_size, 
+                                train_set=True,
+                                small=args.small,
+                            ),
                             shuffle=True,
                             batch_size=args.batch_size,
                             num_workers=args.num_workers,
                         )
     dataloader_validation = DataLoader(
-                            dataset=RGBDepthDataset(root_dir=args.eval_data_path, n_frames=args.n_frames, image_size=args.img_size),
-                            batch_size=args.batch_size,
+                            dataset=RGBDepthDataset(
+                                root_dir=args.eval_data_path, 
+                                n_frames=args.n_frames, 
+                                image_size=args.img_size,  
+                                train_set=False,
+                                small=args.small,
+                            ),
+                            batch_size=args.batch_size_eval,
                             num_workers=args.num_workers,
                         )
 
