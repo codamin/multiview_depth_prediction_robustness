@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from src.models import DPTMultiviewDepth
+from src.models import DPTMultiviewDepth, SkipDPTMultiviewDepth
 from src.dataloaders import RGBDepthDataset
 from src.losses import virtual_normal_loss, midas_loss
 
@@ -38,6 +38,10 @@ def get_args():
     parser.add_argument('--no_pos3d_encoding', action='store_false', dest='pos3d_encoding')
     parser.set_defaults(pos3d_encoding=True)
     parser.add_argument('--pos3d_depth', default=5, type=int)
+    parser.add_argument('--skip_model', default=False, action='store_true')
+    parser.add_argument('--no_skip_model', action='store_false', dest='skip_model')
+    parser.set_defaults(skip_model=False)
+    parser.add_argument('--skip_step', default=4, type=int)
 
     parser.add_argument('--corruptions', default=None, type=str)
     parser.add_argument('--eval_corruptions', default=None, type=str)
@@ -138,12 +142,21 @@ def main(args):
         )
 
     # define the model
-    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
-                                              num_seq_knowledge_source=args.num_seq_knowledge_source,
-                                              pos3d_encoding=args.pos3d_encoding,
-                                              pos3d_depth=args.pos3d_depth,
-                                              initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embed
-                                              ).to(device)
+    if args.skip:
+        model = SkipDPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
+                                                num_seq_knowledge_source=args.num_seq_knowledge_source,
+                                                pos3d_encoding=args.pos3d_encoding,
+                                                pos3d_depth=args.pos3d_depth,
+                                                initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embed
+                                                ).to(device)
+    else:
+        model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
+                                                num_seq_knowledge_source=args.num_seq_knowledge_source,
+                                                pos3d_encoding=args.pos3d_encoding,
+                                                pos3d_depth=args.pos3d_depth,
+                                                initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embedو
+                                                skip_step=args.skip_step
+                                                ).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # load if any checkpoint exists
