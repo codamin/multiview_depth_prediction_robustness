@@ -294,6 +294,12 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
             ks_tuple = ks_tuple + (ks.expand(batch_size, -1, -1),)
         return ks_tuple
 
+    def freeze_base(self):
+        new_params = ['knowledge_sources', 'pos3d_encoder']
+        for name, param in self.named_parameters():
+            if not any(l in new_params for l in name.split('.')):
+                param.requires_grad=False
+
    
 class SkipDPTMultiviewDepth(DPTForDepthEstimation):
     def __init__(self, config, num_seq_knowledge_source=400, pos3d_encoding=True, pos3d_depth=5, initialize_ks_with_pos_embed=False, skip_step=4):
@@ -379,6 +385,12 @@ class SkipDPTMultiviewDepth(DPTForDepthEstimation):
         for ks in self.knowledge_sources:
             ks_tuple = ks_tuple + (ks.expand(batch_size, -1, -1),)
         return ks_tuple
+
+    def freeze_base(self):
+        new_params = ['knowledge_sources', 'pos3d_encoder', 'mid_ks_layer']
+        for name, param in self.named_parameters():
+            if not any(l in new_params for l in name.split('.')):
+                param.requires_grad=False
     
 
 if __name__=='__main__':

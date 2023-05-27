@@ -58,7 +58,11 @@ def get_args():
     parser.add_argument('--device', default='cuda')
 
     parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--lr_ext', type=float, default=None)
     parser.add_argument('--loss_fn', default='midas', type=str)
+    parser.add_argument('--freeze_base', default=False, action='store_true')
+    parser.add_argument('--no_freeze_base', action='store_false', dest='freeze_base')
+    parser.set_defaults(freeze_base=False)
 
     parser.add_argument('--log_wandb', default=False, action='store_true')
     parser.add_argument('--no_log_wandb', action='store_false', dest='log_wandb')
@@ -142,7 +146,7 @@ def main(args):
         )
 
     # define the model
-    if args.skip:
+    if args.skip_model:
         model = SkipDPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
                                                 num_seq_knowledge_source=args.num_seq_knowledge_source,
                                                 pos3d_encoding=args.pos3d_encoding,
@@ -154,10 +158,23 @@ def main(args):
                                                 num_seq_knowledge_source=args.num_seq_knowledge_source,
                                                 pos3d_encoding=args.pos3d_encoding,
                                                 pos3d_depth=args.pos3d_depth,
-                                                initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embedو
+                                                initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embed,
                                                 skip_step=args.skip_step
                                                 ).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    lr_params = [
+            {'params': model.neck.parameters()},
+            {'params': model.head.parameters()},
+            {'params': model.dpt.embeddings.parameters()},
+            {'params': model.dpt.encoder.layer.parameters()},   
+            {'params': model.dpt.layernorm.parameters()},      
+
+            {'params': model.dpt.pos3d_encoder.parameters(), 'lr':args.lr_ext},
+            {'params':  model.knowledge_sources.parameters(), 'lr':args.lr_ext},     
+        ]
+    if args.skip_model: lr_params += [{'params': model.dpt.encoder.mid_ks_layer.parameters(), 'lr':args.lr_ext}]
+    optimizer = torch.optim.Adam(lr_params, lr=args.lr, weight_decay=2e-6, amsgrad=True)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2500, gamma=0.5)
 
     # load if any checkpoint exists
     start_epoch = 0
@@ -169,6 +186,8 @@ def main(args):
     validate(args, model, dataloader_validation, criterion, device=device, step=0)
 
     model.train()
+    if args.freeze_base:
+        model.freeze_base()
     for epoch in range(start_epoch, args.epochs):
         
         step = epoch * len(dataloader_train)
@@ -217,8 +236,11 @@ def main(args):
             if step != 0 and step % args.eval_freq == 0:
                 validate(args, model, dataloader_validation, criterion, step, device)
                 model.train()
+                if args.freeze_base:
+                    model.freeze_base()
 
             step += 1
+            scheduler.step()
         
         if (epoch + 1) % args.save_weight_freq == 0:
             checkpoint.save_checkpoint(args.output_dir, epoch, model, optimizer)
@@ -290,4 +312,6 @@ if __name__=="__main__":
     args = get_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    if args.lr_ext is None:
+        args.lr_ext = args.lr
     main(args)

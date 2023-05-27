@@ -9,9 +9,9 @@ eval_corruptions: None
 n_frames: 4
 img_size: 384
 
-epochs: 100
+epochs: 10
 eval_freq: 200
-save_weight_freq: 20
+save_weight_freq: 2
 output_dir: 'results/baseline'
 device: 'cuda:0'
 

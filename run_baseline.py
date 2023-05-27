@@ -129,7 +129,8 @@ def main(args):
 
     # define the model
     model = DPTDepth.from_pretrained("Intel/dpt-large").to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-6, amsgrad=True)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2500, gamma=0.5)
 
     # load if any checkpoint exists
     start_epoch = 0
@@ -171,7 +172,8 @@ def main(args):
                 model.train()
 
             step += 1
-        
+
+        scheduler.step()
         if (epoch + 1) % args.save_weight_freq == 0:
             checkpoint.save_checkpoint(args.output_dir, epoch, model, optimizer)
             
