@@ -20,8 +20,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from src.models import DPTMultiviewDepth, SkipDPTMultiviewDepth
-from src.dataloaders import RGBDepthDataset
-from src.losses import virtual_normal_loss, midas_loss
 
 import src.checkpoint as checkpoint
 import src.utils as utils
@@ -36,7 +34,7 @@ def get_args():
     parser.add_argument('--data_path', default=None, type=str)
     parser.add_argument('--eval_data_path', default=None, type=str)
     parser.add_argument('--test_data_path', default=None, type=str)
-    
+
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--batch_size_eval', default=16, type=int)
     parser.add_argument('--num_workers', default=10, type=int)
@@ -97,51 +95,6 @@ def get_args():
     
     return args
 
-@torch.no_grad()
-def test(args, model, dataloader_validation, criterion, step, device, n_images=20):
-
-    losses = []
-    original_images = []
-    depth_images = []
-    predicted_depths = []
-
-    model.eval()
-
-    with tqdm(total=len(dataloader_validation)) as progress_bar:
-        for x, depth, _, mask_valid in tqdm(dataloader_validation):
-
-                x = x.reshape(-1, *x.shape[-3:]).to(device)
-                depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
-                mask_valid = mask_valid.reshape(-1, *mask_valid.shape[-3:]).to(device)
-
-                outputs = model(pixel_values=x)
-                predicted_depth = outputs["predicted_depth"][:, None]
-
-                loss_val = criterion(predicted_depth, depth, mask_valid)
-                losses.append(loss_val.item())
-
-                if len(original_images) < n_images:
-                    original_images.append(x)
-                    depth_images.append(depth)
-                    predicted_depths.append(predicted_depth)
-        progress_bar.update(1) # update progress
-    
-
-    # log metrics
-    if args.log_wandb: wandb.log({f"val loss ({args.loss_fn})": sum(losses)/len(losses)}, step=step)
-
-    pil_original_images = utils.rgb_tensor2PIL(original_images)
-    pil_depth_images = utils.depth_tensor2PIL(depth_images)
-    pil_predicted_images = utils.depth_tensor2PIL(predicted_depths)
-
-    if args.log_wandb: utils.log_images(pil_original_images, pil_depth_images, pil_predicted_images, wandb)
-
-    utils.save_images(pil_original_images, path=args.output_dir, name=f'{step:07d}_orig', mode='RGB')
-    utils.save_images(pil_depth_images, path=args.output_dir, name=f'{step:07d}_depth', mode='L')
-    utils.save_images(pil_predicted_images, path=args.output_dir, name=f'{step:07d}_prediction', mode='L')
-    
-
-
 class TestDataset(Dataset):
     def __init__(self, root_dir, n_frames, image_size):
         self.root_dir = root_dir
@@ -158,31 +111,34 @@ class TestDataset(Dataset):
         scenes = ['electro', 'playground', 'office', 'terrace', 'terrains', 'facade',
                   'pipes', 'courtyard', 'relief_2', 'meadow', 'delivery_area', 'kicker', 'relief'
                   ]
+        scenes = ['electro']
 
         self.image_paths = [[] for _ in range(len(scenes))]
         self.cam_translations = [[] for _ in range(len(scenes))]
         self.cam_rotations = [[] for _ in range(len(scenes))]
 
-        for sidx, sname in scenes:
+        for sidx, sname in enumerate(scenes):
             data_path = f'{args.test_data_path}/{sname}/camera_pos.json'
             data = pd.read_json(data_path)
             for view_idx, view in data.iterrows():
-                image_path = f'{type}/images/dslr_images/DSC_{view["id"]:04}.JPG'
+                image_path = f'{args.test_data_path}/{sname}/images/dslr_images/DSC_{view["id"]:04}.JPG'
                 self.image_paths[sidx].append(image_path)
-                self.cam_translations[sidx].append(np.array(view['tx'], view['ty'], view['tz']))
-                self.cam_rotations[sidx].append(view['rx'], view['ry'], view['rz'])
+                self.cam_translations[sidx].append(np.array([view['tx'], view['ty'], view['tz']]))
+                self.cam_rotations[sidx].append([view['rx'], view['ry'], view['rz']])
             
-        # choose n_frame views for each scene
-        indices = np.random.choice(len(scenes), size=self.n_frames, replace=False)
-        self.image_paths = [self.image_paths[idx] for idx in indices]
-        self.cam_translations = [self.cam_translations[idx] for idx in indices]
-        self.cam_rotations = [self.cam_rotations[idx] for idx in indices]
+
+            indices = np.random.choice(len(self.image_paths[sidx]), n_frames, replace=False)
+            indices = np.sort(indices)
+            self.image_paths[sidx] = [self.image_paths[sidx][idx] for idx in indices]
+            self.cam_translations[sidx] = [self.cam_translations[sidx][idx] for idx in indices]
+            self.cam_rotations[sidx] = [self.cam_rotations[sidx][idx] for idx in indices]
+
 
     def __getitem__(self, idx):
-        images = Image.open(self.image_paths[idx])
-        images = self.transform(images)
-        point3d = self.get_camera_frustum(self.cam_translations[idx], self.cam_rotations[idx],
-                                        self.cam_translations[0], self.cam_rotations[0])
+        image_paths = self.image_paths[idx]
+        images = [self.transform(Image.open(image_path)) for image_path in image_paths]
+        point3d = [self._get_camera_frustum(translation, view, self.cam_translations[idx][0], self.cam_rotations[idx][0])
+                   for translation, view in zip(self.cam_translations[idx], self.cam_rotations[idx])]
         
         images = torch.stack(images)
         point3d = torch.stack(point3d)
@@ -190,7 +146,7 @@ class TestDataset(Dataset):
 
         return images, point3d, masks
     
-    def get_initial_frustum(image_size, depth_size):
+    def get_initial_frustum(self, image_size, depth_size):
         _ = None
         xy = np.arange(-1,1, 2/image_size)
         zp = -np.arange(0,1, 1/depth_size)
@@ -208,7 +164,54 @@ class TestDataset(Dataset):
         return torch.tensor(output).float() / 100
 
     def __len__(self):
-        return len(self.data)
+        return len(self.image_paths)
+
+
+@torch.no_grad()
+def test(model, dataloader_test, n_images=10):
+
+    # device = args.device
+    device = 'cpu'
+
+    original_images = []
+    predicted_depths = []
+
+    model.eval()
+
+    with tqdm(total=len(dataloader_test)) as progress_bar:
+        for x, camera_frustum, mask_valid in tqdm(dataloader_test):
+            mask_valid = mask_valid.to(device)
+            x = x.to(device)
+            camera_frustum = camera_frustum.to(device)
+
+            ks = None
+            inputs = []
+            predicted_outputs = []
+            masks = []
+
+            for i in range(x.shape[1]):
+                outputs = model(pixel_values=x[:, i], knowledge_sources=ks, points3d=camera_frustum[:, i])
+                ks = outputs["knowledge_sources"]
+                predicted_depth = outputs["predicted_depth"][:, None]
+                inputs.append(x[:, i])
+                predicted_outputs.append(predicted_depth)
+                masks.append(mask_valid[:, i])
+
+            x = torch.cat(inputs, axis=0)
+            predicted_depth = torch.cat(predicted_outputs, axis=0)
+            mask_valid = torch.cat(masks, axis=0)
+
+            if len(original_images) < n_images:
+                original_images.append(x)
+                predicted_depths.append(predicted_depth)
+        progress_bar.update(1) # update progress
+    
+
+    pil_original_images = utils.rgb_tensor2PIL(original_images)
+    pil_predicted_images = utils.depth_tensor2PIL(predicted_depths)
+
+    utils.save_images(pil_original_images, path=args.output_dir, name=f'orig', mode='RGB')
+    utils.save_images(pil_predicted_images, path=args.output_dir, name=f'prediction', mode='L')
 
 
 if __name__=="__main__":
@@ -225,20 +228,21 @@ if __name__=="__main__":
                                             initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embed
                                             ).to(args.device)
 
-    # load checkpoint
+    # # load checkpoint
     model = checkpoint.load_checkpoint(args.output_dir, model, args.device)
-    print(f"Loaded checkpoint from {args.output_dir}")
+    # print(f"Loaded checkpoint from {args.output_dir}")
 
     # dataloader
-    dataloader_test = DataLoader(dataset=RGBDepthDataset(
+    dataloader_test = DataLoader(dataset=TestDataset(
                             root_dir=args.data_path, 
                             n_frames=args.n_frames, 
                             image_size=args.img_size,
                         ),
                         shuffle=False,
-                        batch_size=args.batch_size,
+                        batch_size=1,
                         num_workers=args.num_workers,
                     )
         
     # model
+    # model = object()
     test(model, dataloader_test)
