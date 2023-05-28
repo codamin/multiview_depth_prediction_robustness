@@ -8,11 +8,13 @@ corruptions: None
 eval_corruptions: None
 n_frames: 4
 img_size: 384
+small: True
+initialize_ks_with_pos_embed: True
 
-epochs: 5
-eval_freq: 200
-save_weight_freq: 1000
-output_dir: 'results/baseline'
+epochs: 100
+eval_freq: 500
+save_weight_freq: 20
+output_dir: 'results/multiview-small-ks_init'
 device: 'cuda:0'
 
 lr: 0.00001
@@ -21,4 +23,4 @@ loss_fn: 'midas'
 log_wandb: True
 wandb_project: 'multiview-robustness-cs-503'
 wandb_entity: 'aav'
-wandb_run_name: 'baseline'
+wandb_run_name: 'multiview-small-ks_init'

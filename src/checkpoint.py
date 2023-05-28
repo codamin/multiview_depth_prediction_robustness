@@ -17,7 +17,7 @@ def save_checkpoint(path, epoch, model, optimizer):
     torch.save(state_dict, path / ('checkpoint-%s.pth' % epoch))
 
 
-def load_checkpoint(path, model, optimizer):
+def load_checkpoint(path, model, optimizer=None):
     path = Path(path)
     all_checkpoints = glob.glob(os.path.join(path, 'checkpoint-*.pth'))
     sorted_ckpt = []
@@ -35,10 +35,11 @@ def load_checkpoint(path, model, optimizer):
 
     checkpoint = torch.load(path, map_location='cpu')
     model.load_state_dict(checkpoint['model'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
+
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer'])
     
     return checkpoint['epoch']
-    
 
 def iter_checkpoints(args, model_without_ddp, last_checkpoint=False):
     import glob

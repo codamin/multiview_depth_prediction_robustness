@@ -8,11 +8,12 @@ corruptions: None
 eval_corruptions: None
 n_frames: 4
 img_size: 384
+pos3d_encoding: False
 
-epochs: 5
-eval_freq: 200
-save_weight_freq: 1000
-output_dir: 'results/baseline'
+epochs: 100
+eval_freq: 500
+save_weight_freq: 20
+output_dir: 'results/multiview_no-pos3d'
 device: 'cuda:0'
 
 lr: 0.00001
@@ -21,4 +22,4 @@ loss_fn: 'midas'
 log_wandb: True
 wandb_project: 'multiview-robustness-cs-503'
 wandb_entity: 'aav'
-wandb_run_name: 'baseline'
+wandb_run_name: 'multiview_no-pos3d'

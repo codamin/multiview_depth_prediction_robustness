@@ -69,6 +69,3 @@ def log_images(orig_images, depth_images, predicted_image, wandb, n_images=5):
     images = orig_images[:n_images] + depth_images[:n_images] + predicted_image[:n_images]
     image = _make_grid(images, 3, n_images, 'RGB')
     wandb.log({"images": wandb.Image(image)})
-    
-
-
