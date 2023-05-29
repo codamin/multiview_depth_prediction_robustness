@@ -16,6 +16,7 @@ eval_freq: 500
 save_weight_freq: 1000
 output_dir: 'results/skip-multiview'
 device: 'cuda:0'
+restart: False
 
 lr: 0.000005
 loss_fn: 'midas'

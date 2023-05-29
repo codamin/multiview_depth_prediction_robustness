@@ -171,7 +171,7 @@ class TestDataset(Dataset):
 def test(model, dataloader_test, n_images=10):
 
     # device = args.device
-    device = 'cpu'
+    device = args.device
 
     original_images = []
     predicted_depths = []
@@ -229,7 +229,7 @@ if __name__=="__main__":
                                             ).to(args.device)
 
     # # load checkpoint
-    model = checkpoint.load_checkpoint(args.output_dir, model, args.device)
+    model = checkpoint.load_checkpoint(args.output_dir, model)
     # print(f"Loaded checkpoint from {args.output_dir}")
 
     # dataloader
