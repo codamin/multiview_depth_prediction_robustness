@@ -10,15 +10,15 @@ n_frames: 4
 img_size: 384
 
 epochs: 5
-eval_freq: 200
-save_weight_freq: 1000
-output_dir: 'results/baseline'
+eval_freq: 500
+save_weight_freq: 2000
+output_dir: '/scratch/izar/aasadi/results/baseline-small'
 device: 'cuda:0'
 
-lr: 0.00001
+lr: 0.000005
 loss_fn: 'midas'
 
 log_wandb: True
 wandb_project: 'multiview-robustness-cs-503'
 wandb_entity: 'aav'
-wandb_run_name: 'baseline'
+wandb_run_name: 'baseline-small'

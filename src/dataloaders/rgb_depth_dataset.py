@@ -83,7 +83,7 @@ class RGBDepthDataset(Dataset):
         self.point_dir = os.path.join(root_dir, 'point_info')
         self.inp_files = sorted(os.listdir(self.inp_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3])))
         self.out_files = sorted(os.listdir(self.out_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3])))
-        self.mask_files = sorted(os.listdir(self.mask_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) 
+        # self.mask_files = sorted(os.listdir(self.mask_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) 
         self.point_files = sorted(os.listdir(self.point_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) if os.path.exists(self.point_dir) else None
 
         self.resize_and_to_tensor = transforms.Compose([
@@ -97,7 +97,7 @@ class RGBDepthDataset(Dataset):
 
     def __len__(self):
         if self.small:
-            return self.n_seqs // 10
+            return self.n_seqs // 2
         return self.n_seqs
 
     def __getitem__(self, idx):
@@ -139,7 +139,9 @@ class RGBDepthDataset(Dataset):
         
         # apply transform
         transform_key = np.random.choice(list(self.transform.keys()))
-        severity_idx_values = np.random.randint(low=0, high=5, size=len(inp_imgs))
+        severity_idx_values = np.random.randint(low=0, high=4, size=len(inp_imgs))
+        while severity_idx_values.mean() > 2.5:
+           severity_idx_values = np.random.randint(low=0, high=4, size=len(inp_imgs)) 
         if transform_key == 'fog_3d':
             inp_imgs = [self.transform[transform_key](img, depth, severity_idx=siv) for img, depth, siv in zip(inp_imgs, out_imgs, severity_idx_values)]
         else:
@@ -177,7 +179,7 @@ class RGBDepthDataset(Dataset):
             # add filename to dict
             dict_inp_filename[seq].append(filename)
             dict_out_filename[seq].append(self.out_files[i])
-            dict_mask_filename[seq].append(self.mask_files[i])
+            # dict_mask_filename[seq].append(self.mask_files[i])
             dict_point_filename[seq].append(self.point_files[i] if self.point_files is not None else None)
 
             if seq > n_seqs:

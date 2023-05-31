@@ -16,6 +16,77 @@ from src.losses import virtual_normal_loss, midas_loss
 import src.checkpoint as checkpoint
 import src.utils as utils
 
+def get_args():
+    config_parser = argparse.ArgumentParser()
+    
+    config_parser.add_argument('--config', default='', type=str)
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--data_path', default=None, type=str)
+    parser.add_argument('--eval_data_path', default=None, type=str)
+    parser.add_argument('--test_data_path', default=None, type=str)
+
+    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--batch_size_eval', default=16, type=int)
+    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--small', default=False, action='store_true')
+    parser.set_defaults(small=False)
+
+    parser.add_argument('--num_seq_knowledge_source', default=200, type=int)
+    parser.add_argument('--initialize_ks_with_pos_embed', default=False, action='store_true')
+    parser.set_defaults(initialize_ks_with_pos_embed=False)
+    parser.add_argument('--pos3d_encoding', default=True, action='store_true')
+    parser.add_argument('--no_pos3d_encoding', action='store_false', dest='pos3d_encoding')
+    parser.set_defaults(pos3d_encoding=True)
+    parser.add_argument('--pos3d_depth', default=5, type=int)
+    parser.add_argument('--skip_model', default=False, action='store_true')
+    parser.add_argument('--no_skip_model', action='store_false', dest='skip_model')
+    parser.set_defaults(skip_model=False)
+    parser.add_argument('--skip_step', default=4, type=int)
+
+    parser.add_argument('--corruptions', default=None, type=str)
+    parser.add_argument('--eval_corruptions', default=None, type=str)
+    parser.add_argument('--n_frames', default=10, type=int)
+    parser.add_argument('--img_size', default=384, type=int)
+
+    parser.add_argument('--epochs', default=100, type=int)
+    parser.add_argument('--eval_freq', default=1000, type=int)
+    parser.add_argument('--save_weight_freq', default=5, type=int)
+    parser.add_argument('--restart', default=True, action='store_true')
+    parser.add_argument('--no_restart', action='store_false', dest='restart')
+    parser.set_defaults(restart=True)
+    parser.add_argument('--output_dir', default='results/')
+    parser.add_argument('--test_output_dir', default=None, type=str)
+    parser.add_argument('--device', default='cuda')
+
+    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--lr_ext', type=float, default=None)
+    parser.add_argument('--loss_fn', default='midas', type=str)
+    parser.add_argument('--freeze_base', default=False, action='store_true')
+    parser.add_argument('--no_freeze_base', action='store_false', dest='freeze_base')
+    parser.set_defaults(freeze_base=False)
+
+    parser.add_argument('--log_wandb', default=False, action='store_true')
+    parser.add_argument('--no_log_wandb', action='store_false', dest='log_wandb')
+    parser.set_defaults(log_wandb=False)
+    parser.add_argument('--wandb_project', default="multiview-robustness-cs-503", type=str)
+    parser.add_argument('--wandb_entity', default="aav", type=str)
+    parser.add_argument('--wandb_run_name', default=None, type=str)
+
+    args_config, remaining = config_parser.parse_known_args()
+    if args_config.config:
+        with open(args_config.config, 'r') as f:
+            cfg = yaml.safe_load(f)
+            parser.set_defaults(**cfg)
+
+    else:
+        print('No config file specified. Using default arguments.')
+        
+    args = parser.parse_args(remaining)
+    
+    return args
+
 def create_loss(loss_fn, device):
     if loss_fn == 'mse':
         return lambda prediction, ground_truth, mask_valid: F.mse_loss(prediction, ground_truth)
@@ -112,9 +183,11 @@ def main(args):
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.8)
 
     # load if any checkpoint exists
+    start_step = None
     start_epoch = 0
     if not args.restart:
-        start_epoch = checkpoint.load_checkpoint(args.output_dir, model, optimizer)
+        start_step = checkpoint.load_checkpoint(args.output_dir, model, optimizer)
+        start_epoch = start_step // len(dataloader_train)
 
     criterion = create_loss(args.loss_fn, device)
 
@@ -125,7 +198,9 @@ def main(args):
         model.freeze_base()
     for epoch in range(start_epoch, args.epochs):
         
-        step = epoch * len(dataloader_train)
+        step = epoch * len(dataloader_train) if start_step is None else start_step
+        start_step = None
+        
         if args.log_wandb: wandb.log({f"Epoch": epoch}, step=step)
         for x, depth, camera_frustum, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
 
