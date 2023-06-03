@@ -39,7 +39,7 @@ def _pixelate(x, resize=8, severity_idx=None):
     return F.interpolate(x[None,:], size=(h,w))[0]
 
 def _identity(x, severity_idx=None):
-    return 
+    return x
 
 def fourier_features(coords):
     "inspired from graded exercise 1 in computer vision"

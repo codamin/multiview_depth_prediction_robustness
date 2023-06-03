@@ -38,7 +38,7 @@ class RelativeMotionEncoder(nn.Module):
 
     def forward(self, relative_rotation, relative_position):
         # Concatenate the input tensors
-        x = torch.cat((relative_rotation, relative_position), dim=1)
+        x = torch.cat((relative_rotation, relative_position), dim=-1)
         
         # Pass through the hidden layer
         x = self.hidden_layer(x)

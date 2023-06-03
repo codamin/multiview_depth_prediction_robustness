@@ -22,7 +22,7 @@ restart: False
 lr: 0.000005
 loss_fn: 'midas'
 
-log_wandb: False
+log_wandb: True
 wandb_project: 'multiview-robustness-cs-503'
 wandb_entity: 'aav'
 wandb_run_name: 'skip-multiview-tfm'
