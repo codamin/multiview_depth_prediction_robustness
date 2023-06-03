@@ -39,7 +39,55 @@ def _pixelate(x, resize=8, severity_idx=None):
     return F.interpolate(x[None,:], size=(h,w))[0]
 
 def _identity(x, severity_idx=None):
-    return x
+    return 
+
+def fourier_features(coords):
+    "inspired from graded exercise 1 in computer vision"
+    xs, ys, zs = coords.T
+    freqs = np.array([[1, 2, 4, 8, 16]]) / 16
+    
+    return np.concatenate([
+        np.sin(2 * np.pi * freqs * xs[:, None]),
+        np.sin(2 * np.pi * freqs * ys[:, None]),
+        np.sin(2 * np.pi * freqs * zs[:, None]),
+        np.cos(2 * np.pi * freqs * xs[:, None]),
+        np.cos(2 * np.pi * freqs * ys[:, None]),
+        np.cos(2 * np.pi * freqs * zs[:, None]),
+    ], axis=-1)
+
+def get_relative_rot_trans(view_dict_0, view_dict_1):
+    loc_0 = np.array(view_dict_0['camera_location'])
+    rot_0 = np.array(view_dict_0['camera_rotation_final'])
+    loc_1 = np.array(view_dict_1['camera_location'])
+    rot_1 = np.array(view_dict_1['camera_rotation_final'])
+
+    # rotation
+    p_inv = np.linalg.inv(R.from_euler("xyz", rot_0).as_matrix())
+    q = R.from_euler("xyz", rot_1).as_matrix()
+    r = q @ p_inv
+    r = R.from_matrix(r)
+
+    # translation
+    t = loc_1 - loc_0
+
+    rel_rot = fourier_features(r.as_euler("xyz")[None,:])
+    rel_transl = fourier_features(t[None,:])
+    return rel_rot, rel_transl
+
+def get_list_relative_motion_ff(list_view_dicts):
+    """ get list of relative motion between views in fourier feature form """
+    list_rel_rot = []
+    list_rel_transl = []
+    first_rel_rot, first_rel_transl = get_relative_rot_trans(list_view_dicts[0], list_view_dicts[0])
+    list_rel_rot.append(first_rel_rot)
+    list_rel_transl.append(first_rel_transl)
+    for i in range(1, len(list_view_dicts)):
+        rel_rot, rel_transl = get_relative_rot_trans(list_view_dicts[i-1], list_view_dicts[i])
+        list_rel_rot.append(rel_rot)
+        list_rel_transl.append(rel_transl)
+    return {"rel_rots": torch.tensor(np.array(list_rel_rot)).float(), 
+            "rel_transls": torch.tensor(np.array(list_rel_transl)).float()}
+
 
 corruptions = {
     'gaussian_noise': _gaussian_noise,
@@ -65,7 +113,7 @@ def load_camera_info(path):
     return data
 
 class RGBDepthDataset(Dataset):
-    def __init__(self, root_dir, transform=None, n_frames=16, image_size=384, depth_size=5, train_set=True, small=False):
+    def __init__(self, root_dir, transform=None, n_frames=16, image_size=384, depth_size=5, train_set=True, small=False, flag_rel_motion=False):
         self.root_dir = root_dir
         if transform is None:
             self.transform = corruptions
@@ -85,6 +133,7 @@ class RGBDepthDataset(Dataset):
         self.out_files = sorted(os.listdir(self.out_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3])))
         self.mask_files = sorted(os.listdir(self.mask_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) 
         self.point_files = sorted(os.listdir(self.point_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) if os.path.exists(self.point_dir) else None
+        self.flag_rel_motion = flag_rel_motion
 
         self.resize_and_to_tensor = transforms.Compose([
             transforms.Resize((image_size, image_size)),
@@ -132,6 +181,11 @@ class RGBDepthDataset(Dataset):
         else:
             inp_points = torch.nan
 
+        if self.flag_rel_motion and len(point_info) != 0:
+            rel_motion = get_list_relative_motion_ff(point_info)
+        else:
+            rel_motion = {"rel_rots": torch.nan, "rel_transls": torch.nan}
+            
         # mask_filenames = [self.dict_mask_filename[idx][i] for i in seq_idx]
         # # load the mono channel images
         # masks = [Image.open(os.path.join(self.mask_dir, filename)) for filename in mask_filenames]
@@ -155,7 +209,7 @@ class RGBDepthDataset(Dataset):
 
         out_imgs = 10000 / (out_imgs + 1e-05)
 
-        return inp_imgs, out_imgs, inp_points, masks
+        return inp_imgs, out_imgs, inp_points, masks, rel_motion
 
 
     def _get_num_seqs_frames(self):
@@ -206,9 +260,9 @@ class RGBDepthDataset(Dataset):
 if __name__=="__main__":
     import matplotlib.pyplot as plt
 
-    ds = RGBDepthDataset(root_dir='/scratch/izar/aasadi/dataset/data/train', n_frames=4, small=True)
-    img, depth, points, mask = ds[10]
+    ds = RGBDepthDataset(root_dir='/home/vpani/sem4/visual_intelligence/sample_data/train', n_frames=2, small=False, flag_rel_motion=True)
+    img, depth, points, mask, rel_motion = ds[1]
     print(len(ds))
-    print(mask.shape, img.shape)
+    print(mask.shape, img.shape, rel_motion["rel_rots"].shape, rel_motion["rel_transls"].shape, points.shape)
     # plt.imshow((img[0] / 2 + 0.5).permute(1,2,0))
     # plt.show()

@@ -146,7 +146,7 @@ def main(args):
         
         step = epoch * len(dataloader_train)
         if args.log_wandb: wandb.log({f"Epoch": epoch}, step=step)
-        for x, depth, _, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
+        for x, depth, _, mask_valid, _ in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
             
             x = x.reshape(-1, *x.shape[-3:]).to(device)
             depth = depth.reshape(-1, *depth.shape[-3:]).to(device)
@@ -189,7 +189,7 @@ def validate(args, model, dataloader_validation, criterion, step, device, n_imag
     model.eval()
 
     with tqdm(total=len(dataloader_validation)) as progress_bar:
-        for x, depth, _, mask_valid in tqdm(dataloader_validation):
+        for x, depth, _, mask_valid, _ in tqdm(dataloader_validation):
 
                 x = x.reshape(-1, *x.shape[-3:]).to(device)
                 depth = depth.reshape(-1, *depth.shape[-3:]).to(device)

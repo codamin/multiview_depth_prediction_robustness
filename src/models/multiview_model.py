@@ -21,6 +21,7 @@ class Positional3DEncoder(nn.Module):
         pos = torch.selu(pos)
         pos = self.mlp_layer_2(pos)
         pos = pos.flatten(2).transpose(1, 2)
+        # (bs, seq_len, hidden_size)
         return pos
     
     def zero_init(self):
@@ -28,6 +29,26 @@ class Positional3DEncoder(nn.Module):
         nn.init.zeros_(self.mlp_layer_1.bias)
         nn.init.zeros_(self.mlp_layer_2.weight)
         nn.init.zeros_(self.mlp_layer_2.bias)
+
+class RelativeMotionEncoder(nn.Module):
+    def __init__(self, input_size, hidden_size, ):
+        super(RelativeMotionEncoder, self).__init__()
+        self.hidden_layer = nn.Linear(input_size * 2, hidden_size)
+        self.output_layer = nn.Linear(hidden_size, hidden_size)
+
+    def forward(self, relative_rotation, relative_position):
+        # Concatenate the input tensors
+        x = torch.cat((relative_rotation, relative_position), dim=1)
+        
+        # Pass through the hidden layer
+        x = self.hidden_layer(x)
+        x = torch.relu(x)
+        
+        # Pass through the output layer
+        x = self.output_layer(x)
+        x = torch.relu(x)
+        
+        return x
 
 
 class DPTMultiviewViTEncoder(nn.Module):
@@ -151,6 +172,10 @@ class DPTMultiviewModel(DPTModel):
         if config.pos3d_encoding:
             self.pos3d_encoder = Positional3DEncoder(depth_size=config.pos3d_depth, patch_size=config.patch_size, hidden_size=config.hidden_size)
 
+        if config.flag_rel_motion:
+            # Input size hardcoded for now! Must be changed if fourier feature calculations are changed 
+            self.rel_motion_encoder = RelativeMotionEncoder(30, config.hidden_size)
+        
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -159,6 +184,8 @@ class DPTMultiviewModel(DPTModel):
         pixel_values: torch.FloatTensor,
         knowledge_sources: Tuple[torch.Tensor],
         points3d: Optional[torch.Tensor] = None,
+        rel_rotation: Optional[torch.Tensor] = None,
+        rel_translation: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -181,7 +208,11 @@ class DPTMultiviewModel(DPTModel):
 
         if hasattr(self, "pos3d_encoder") and not torch.isnan(points3d).any():
             pos3d_encoding = self.pos3d_encoder(points3d)
-            embedding_last_hidden_states[:, :-1] = embedding_last_hidden_states[:, :-1] + pos3d_encoding
+            embedding_last_hidden_states[:, :-1] = embedding_last_hidden_states[:, :-1] + pos3d_encoding 
+        
+        if hasattr(self, "rel_motion_encoder") and not torch.isnan(rel_translation).any() and not torch.isnan(rel_rotation).any():
+            rel_motion_encoding = self.rel_motion_encoder(rel_rotation, rel_translation)
+            embedding_last_hidden_states[:, :-1] = embedding_last_hidden_states[:, :-1] + rel_motion_encoding
 
         encoder_outputs = self.encoder(
             embedding_last_hidden_states,
@@ -210,7 +241,7 @@ class DPTMultiviewModel(DPTModel):
 
 
 class DPTMultiviewDepth(DPTForDepthEstimation):
-    def __init__(self, config, num_seq_knowledge_source=200, pos3d_encoding=True, pos3d_depth=5, initialize_ks_with_pos_embed=False):
+    def __init__(self, config, num_seq_knowledge_source=200, pos3d_encoding=True, flag_rel_motion=False, pos3d_depth=5, initialize_ks_with_pos_embed=False):
         super().__init__(config)
 
         if not hasattr(config, "num_seq_knowledge_source"):
@@ -219,6 +250,8 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
             config.__setattr__("pos3d_encoding", pos3d_encoding)
         if not hasattr(config, "pos3d_depth"):
             config.__setattr__("pos3d_depth", pos3d_depth)
+        if not hasattr(config, "flag_rel_motion"):
+            config.__setattr__("flag_rel_motion", flag_rel_motion)
 
         del self.dpt
         self.dpt = DPTMultiviewModel(config, add_pooling_layer=False)
@@ -237,6 +270,8 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
         pixel_values: torch.FloatTensor,
         knowledge_sources: Optional[Tuple[torch.Tensor]] = None,
         points3d: Optional[torch.Tensor] = None,
+        rel_rotation: Optional[torch.Tensor] = None,
+        rel_translation: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -253,6 +288,8 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
             pixel_values,
             knowledge_sources,
             points3d,
+            rel_rotation,
+            rel_translation,
             head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=True,  # we need the intermediate hidden states
@@ -302,7 +339,7 @@ class DPTMultiviewDepth(DPTForDepthEstimation):
 
    
 class SkipDPTMultiviewDepth(DPTForDepthEstimation):
-    def __init__(self, config, num_seq_knowledge_source=400, pos3d_encoding=True, pos3d_depth=5, initialize_ks_with_pos_embed=False, skip_step=4):
+    def __init__(self, config, num_seq_knowledge_source=400, pos3d_encoding=True, flag_rel_motion=False, pos3d_depth=5, initialize_ks_with_pos_embed=False, skip_step=4):
         super().__init__(config)
 
         if not hasattr(config, "num_seq_knowledge_source"):
@@ -311,6 +348,8 @@ class SkipDPTMultiviewDepth(DPTForDepthEstimation):
             config.__setattr__("pos3d_encoding", pos3d_encoding)
         if not hasattr(config, "pos3d_depth"):
             config.__setattr__("pos3d_depth", pos3d_depth)
+        if not hasattr(config, "flag_rel_motion"):
+            config.__setattr__("flag_rel_motion", flag_rel_motion)
 
         del self.dpt
         self.dpt = DPTMultiviewModel(config, add_pooling_layer=False, skip=True, skip_step=skip_step)
@@ -329,6 +368,8 @@ class SkipDPTMultiviewDepth(DPTForDepthEstimation):
         pixel_values: torch.FloatTensor,
         knowledge_sources: Optional[Tuple[torch.Tensor]] = None,
         points3d: Optional[torch.Tensor] = None,
+        rel_rotation: Optional[torch.Tensor] = None,
+        rel_translation: Optional[torch.Tensor] = None,
         head_mask: Optional[torch.FloatTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -345,6 +386,8 @@ class SkipDPTMultiviewDepth(DPTForDepthEstimation):
             pixel_values,
             knowledge_sources,
             points3d,
+            rel_rotation,
+            rel_translation,
             head_mask=head_mask,
             output_attentions=output_attentions,
             output_hidden_states=True,  # we need the intermediate hidden states
@@ -394,6 +437,11 @@ class SkipDPTMultiviewDepth(DPTForDepthEstimation):
     
 
 if __name__=='__main__':
-    model = SkipDPTMultiviewDepth.from_pretrained("Intel/dpt-large")
-    out = model(torch.zeros((1,3,384,384)), points3d=torch.zeros((1,15,384,384)))
-    print(out["predicted_depth"].shape)
+    # model = SkipDPTMultiviewDepth.from_pretrained("Intel/dpt-large")
+    # out = model(torch.zeros((1,3,384,384)), points3d=torch.zeros((1,15,384,384)))
+    # print(out["predicted_depth"].shape)
+
+    relative_motion_encoder = RelativeMotionEncoder(30, 50)
+    out = relative_motion_encoder(torch.zeros((1, 30)), torch.zeros((1, 30)))
+    print(out.shape)
+
