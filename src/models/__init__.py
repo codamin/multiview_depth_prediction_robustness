@@ -1,2 +1,2 @@
 from transformers import DPTForDepthEstimation as DPTDepth
-from .multiview_model import DPTMultiviewDepth, SkipDPTMultiviewDepth
+from .multiview_model import DPTMultiviewDepth

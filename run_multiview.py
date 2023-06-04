@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from src.models import DPTMultiviewDepth, SkipDPTMultiviewDepth
+from src.models import DPTMultiviewDepth
 from src.dataloaders import RGBDepthDataset
 from src.losses import virtual_normal_loss, midas_loss
 
@@ -30,19 +30,12 @@ def get_args():
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--batch_size_eval', default=16, type=int)
     parser.add_argument('--num_workers', default=10, type=int)
-    parser.add_argument('--small', default=False, action='store_true')
-    parser.set_defaults(small=False)
 
     parser.add_argument('--num_seq_knowledge_source', default=200, type=int)
-    parser.add_argument('--initialize_ks_with_pos_embed', default=False, action='store_true')
-    parser.set_defaults(initialize_ks_with_pos_embed=False)
     parser.add_argument('--pos3d_encoding', default=True, action='store_true')
     parser.add_argument('--no_pos3d_encoding', action='store_false', dest='pos3d_encoding')
     parser.set_defaults(pos3d_encoding=True)
     parser.add_argument('--pos3d_depth', default=5, type=int)
-    parser.add_argument('--skip_model', default=False, action='store_true')
-    parser.add_argument('--no_skip_model', action='store_false', dest='skip_model')
-    parser.set_defaults(skip_model=False)
     parser.add_argument('--skip_step', default=4, type=int)
 
     parser.add_argument('--corruptions', default=None, type=str)
@@ -57,15 +50,10 @@ def get_args():
     parser.add_argument('--no_restart', action='store_false', dest='restart')
     parser.set_defaults(restart=True)
     parser.add_argument('--output_dir', default='results/')
-    parser.add_argument('--test_output_dir', default=None, type=str)
     parser.add_argument('--device', default='cuda')
 
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--lr_ext', type=float, default=None)
     parser.add_argument('--loss_fn', default='midas', type=str)
-    parser.add_argument('--freeze_base', default=False, action='store_true')
-    parser.add_argument('--no_freeze_base', action='store_false', dest='freeze_base')
-    parser.set_defaults(freeze_base=False)
 
     parser.add_argument('--log_wandb', default=False, action='store_true')
     parser.add_argument('--no_log_wandb', action='store_false', dest='log_wandb')
@@ -113,11 +101,11 @@ def main(args):
     dataloader_train = DataLoader(
                             dataset=RGBDepthDataset(
                                 root_dir=args.data_path, 
+                                transform=args.corruptions,
                                 n_frames=args.n_frames, 
                                 image_size=args.img_size, 
                                 depth_size=args.pos3d_depth, 
                                 train_set=True,
-                                small=args.small,
                             ),
                             shuffle=True,
                             batch_size=args.batch_size,
@@ -125,12 +113,12 @@ def main(args):
                         )
     dataloader_validation = DataLoader(
                             dataset=RGBDepthDataset(
-                                root_dir=args.eval_data_path, 
+                                root_dir=args.eval_data_path,
+                                transform=args.eval_corruptions,
                                 n_frames=args.n_frames, 
                                 image_size=args.img_size, 
                                 depth_size=args.pos3d_depth, 
                                 train_set=False,
-                                small=args.small,
                             ),
                             batch_size=args.batch_size_eval,
                             num_workers=args.num_workers,
@@ -152,34 +140,14 @@ def main(args):
         )
 
     # define the model
-    if args.skip_model:
-        model = SkipDPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
-                                                num_seq_knowledge_source=args.num_seq_knowledge_source,
-                                                pos3d_encoding=args.pos3d_encoding,
-                                                pos3d_depth=args.pos3d_depth,
-                                                initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embed
-                                                ).to(device)
-    else:
-        model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
-                                                num_seq_knowledge_source=args.num_seq_knowledge_source,
-                                                pos3d_encoding=args.pos3d_encoding,
-                                                pos3d_depth=args.pos3d_depth,
-                                                initialize_ks_with_pos_embed=args.initialize_ks_with_pos_embed,
-                                                skip_step=args.skip_step
-                                                ).to(device)
+    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
+                                            num_seq_knowledge_source=args.num_seq_knowledge_source,
+                                            pos3d_encoding=args.pos3d_encoding,
+                                            pos3d_depth=args.pos3d_depth,
+                                            ).to(device)
 
-    lr_params = [
-            {'params': model.neck.parameters()},
-            {'params': model.head.parameters()},
-            {'params': model.dpt.embeddings.parameters()},
-            {'params': model.dpt.encoder.layer.parameters()},   
-            {'params': model.dpt.layernorm.parameters()},      
 
-            {'params': model.dpt.pos3d_encoder.parameters(), 'lr':args.lr_ext},
-            {'params':  model.knowledge_sources.parameters(), 'lr':args.lr_ext},     
-        ]
-    if args.skip_model: lr_params += [{'params': model.dpt.encoder.mid_ks_layer.parameters(), 'lr':args.lr_ext}]
-    optimizer = torch.optim.Adam(lr_params, lr=args.lr, weight_decay=2e-6, amsgrad=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-6, amsgrad=True)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.8)
 
     # load if any checkpoint exists
@@ -194,8 +162,6 @@ def main(args):
     validate(args, model, dataloader_validation, criterion, device=device, step=0)
 
     model.train()
-    if args.freeze_base:
-        model.freeze_base()
     for epoch in range(start_epoch, args.epochs):
         
         step = epoch * len(dataloader_train) if start_step is None else start_step
@@ -246,8 +212,6 @@ def main(args):
             if step != 0 and step % args.eval_freq == 0:
                 validate(args, model, dataloader_validation, criterion, step, device)
                 model.train()
-                if args.freeze_base:
-                    model.freeze_base()
 
             step += 1
             scheduler.step()

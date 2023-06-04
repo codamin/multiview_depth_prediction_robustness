@@ -23,10 +23,10 @@ def _gaussian_blur(x, sigma=8, severity_idx=None):
     k = 4 * sigma + 1
     return transforms.functional.gaussian_blur(x, kernel_size=k, sigma=sigma)
 
-def _fog_3d(x, depth, fog_strength=150, severity_idx=None):
+def _fog_3d(x, depth, fog_strength=100, severity_idx=None):
     depth = depth/depth.max()
     if severity_idx is not None:
-        fog_strength = [100, 125, 150, 175, 200][severity_idx]
+        fog_strength = [50, 75, 100, 125, 150][severity_idx]
     t = torch.exp(-fog_strength * depth)
     a = x.mean()
     return x * t + a * (1-t)
@@ -65,7 +65,7 @@ def load_camera_info(path):
     return data
 
 class RGBDepthDataset(Dataset):
-    def __init__(self, root_dir, transform=None, n_frames=16, image_size=384, depth_size=5, train_set=True, small=False):
+    def __init__(self, root_dir, transform=None, n_frames=16, image_size=384, depth_size=5, train_set=True):
         self.root_dir = root_dir
         if transform is None:
             self.transform = corruptions
@@ -76,14 +76,13 @@ class RGBDepthDataset(Dataset):
         self.n_frames = n_frames
         self.image_size = image_size
         self.train_set = train_set
-        self.small = small
+
         self.inp_dir = os.path.join(root_dir, 'rgb')
         self.out_dir = os.path.join(root_dir, 'depth_zbuffer')
-        self.mask_dir = os.path.join(root_dir, 'mask_valid')
         self.point_dir = os.path.join(root_dir, 'point_info')
+
         self.inp_files = sorted(os.listdir(self.inp_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3])))
         self.out_files = sorted(os.listdir(self.out_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3])))
-        # self.mask_files = sorted(os.listdir(self.mask_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) 
         self.point_files = sorted(os.listdir(self.point_dir), key=lambda x: (int(x.split('_')[1]), int(x.split('_')[3]))) if os.path.exists(self.point_dir) else None
 
         self.resize_and_to_tensor = transforms.Compose([
@@ -91,13 +90,11 @@ class RGBDepthDataset(Dataset):
             transforms.ToTensor()
         ])
 
-        self.n_seqs, self.list_n_frames, self.dict_inp_filename, self.dict_out_filename, self.dict_mask_filename, self.dict_point_filename = self._get_num_seqs_frames()
+        self.n_seqs, self.list_n_frames, self.dict_inp_filename, self.dict_out_filename, self.dict_point_filename = self._get_num_seqs_frames()
         self.initial_frustum = get_initial_frustum(image_size, depth_size)
 
 
     def __len__(self):
-        if self.small:
-            return self.n_seqs // 2
         return self.n_seqs
 
     def __getitem__(self, idx):
@@ -131,17 +128,12 @@ class RGBDepthDataset(Dataset):
             inp_points = [self._get_camera_frustum(view_dict, first_view_dict) for view_dict in point_info]
         else:
             inp_points = torch.nan
-
-        # mask_filenames = [self.dict_mask_filename[idx][i] for i in seq_idx]
-        # # load the mono channel images
-        # masks = [Image.open(os.path.join(self.mask_dir, filename)) for filename in mask_filenames]
-        # masks = [(self.resize_and_to_tensor(img) < 0.99) for img in masks]
         
         # apply transform
         transform_key = np.random.choice(list(self.transform.keys()))
-        severity_idx_values = np.random.randint(low=0, high=4, size=len(inp_imgs))
-        while severity_idx_values.mean() > 2.5:
-           severity_idx_values = np.random.randint(low=0, high=4, size=len(inp_imgs)) 
+        
+        severity_idx_values = np.random.randint(low=0, high=5, size=len(inp_imgs))
+
         if transform_key == 'fog_3d':
             inp_imgs = [self.transform[transform_key](img, depth, severity_idx=siv) for img, depth, siv in zip(inp_imgs, out_imgs, severity_idx_values)]
         else:
@@ -150,7 +142,6 @@ class RGBDepthDataset(Dataset):
         inp_imgs = torch.stack(inp_imgs)
         out_imgs = torch.stack(out_imgs)
         inp_points = torch.stack(inp_points)
-        # masks = torch.stack(masks)
 
         masks = torch.ones_like(out_imgs, dtype=torch.bool)
         masks[out_imgs == 65535.0] = 0
@@ -165,7 +156,6 @@ class RGBDepthDataset(Dataset):
         list_n_frames = []
         dict_inp_filename = {}
         dict_out_filename = {}
-        dict_mask_filename = {}
         dict_point_filename = {}
         for i, filename in enumerate(self.inp_files):
             seq = int(filename.split('_')[1])
@@ -175,22 +165,21 @@ class RGBDepthDataset(Dataset):
                 dict_inp_filename[seq] = []
                 dict_out_filename[seq] = []
                 dict_point_filename[seq] = []
-                dict_mask_filename[seq] = []
             # add filename to dict
             dict_inp_filename[seq].append(filename)
             dict_out_filename[seq].append(self.out_files[i])
-            # dict_mask_filename[seq].append(self.mask_files[i])
             dict_point_filename[seq].append(self.point_files[i] if self.point_files is not None else None)
 
             if seq > n_seqs:
                 n_seqs = seq
                 n_frames = int(self.inp_files[i-1].split('_')[3])+1
                 list_n_frames.append(n_frames)
+
                 assert n_frames >= self.n_frames, "n_frames < self.n_frames"
 
         list_n_frames.append(int(self.inp_files[-1].split('_')[3])+1)
 
-        return n_seqs+1, list_n_frames, dict_inp_filename, dict_out_filename, dict_mask_filename, dict_point_filename
+        return n_seqs+1, list_n_frames, dict_inp_filename, dict_out_filename, dict_point_filename
     
     def _get_camera_frustum(self, view_dict, first_view_dict):
         location = np.array(view_dict['camera_location'])
@@ -208,9 +197,7 @@ class RGBDepthDataset(Dataset):
 if __name__=="__main__":
     import matplotlib.pyplot as plt
 
-    ds = RGBDepthDataset(root_dir='/scratch/izar/aasadi/dataset/data/train', n_frames=4, small=True)
+    ds = RGBDepthDataset(root_dir='/scratch/izar/aasadi/dataset/data/train', n_frames=4)
     img, depth, points, mask = ds[10]
     print(len(ds))
     print(mask.shape, img.shape)
-    # plt.imshow((img[0] / 2 + 0.5).permute(1,2,0))
-    # plt.show()

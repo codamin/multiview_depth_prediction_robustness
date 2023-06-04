@@ -208,101 +208,9 @@ class DPTMultiviewModel(DPTModel):
 
         return output
 
-
-class DPTMultiviewDepth(DPTForDepthEstimation):
-    def __init__(self, config, num_seq_knowledge_source=200, pos3d_encoding=True, pos3d_depth=5, initialize_ks_with_pos_embed=False):
-        super().__init__(config)
-
-        if not hasattr(config, "num_seq_knowledge_source"):
-            config.__setattr__("num_seq_knowledge_source", num_seq_knowledge_source)
-        if not hasattr(config, "pos3d_encoding"):
-            config.__setattr__("pos3d_encoding", pos3d_encoding)
-        if not hasattr(config, "pos3d_depth"):
-            config.__setattr__("pos3d_depth", pos3d_depth)
-
-        del self.dpt
-        self.dpt = DPTMultiviewModel(config, add_pooling_layer=False)
-
-        if initialize_ks_with_pos_embed:
-             self.knowledge_sources = nn.ParameterList([self.dpt.embeddings.position_embeddings.data for _ in range(config.num_hidden_layers)])
-        else:
-            self.knowledge_sources = nn.ParameterList([torch.rand(1, config.num_seq_knowledge_source, config.hidden_size) for _ in range(config.num_hidden_layers)])
-
-        # Initialize weights and apply final processing
-        self.post_init()
-
-
-    def forward(
-        self,
-        pixel_values: torch.FloatTensor,
-        knowledge_sources: Optional[Tuple[torch.Tensor]] = None,
-        points3d: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.FloatTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-    ) -> dict:
-
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-
-        if knowledge_sources is None:
-            knowledge_sources = self.init_knowledge_source(batch_size=pixel_values.shape[0])
-
-        dpt_outputs = self.dpt(
-            pixel_values,
-            knowledge_sources,
-            points3d,
-            head_mask=head_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=True,  # we need the intermediate hidden states
-        )
-
-        hidden_states = dpt_outputs["hidden_states"]
-
-        # only keep certain features based on config.backbone_out_indices
-        # note that the hidden_states also include the initial embeddings
-        if not self.config.is_hybrid:
-            hidden_states = [
-                feature for idx, feature in enumerate(hidden_states[1:]) if idx in self.config.backbone_out_indices
-            ]
-        else:
-            backbone_hidden_states = dpt_outputs["intermediate_activations"]
-            backbone_hidden_states.extend(
-                feature for idx, feature in enumerate(hidden_states[1:]) if idx in self.config.backbone_out_indices[2:]
-            )
-
-            hidden_states = backbone_hidden_states
-
-        hidden_states = self.neck(hidden_states)
-
-        predicted_depth = self.head(hidden_states)
-
-        output = {
-            "predicted_depth": predicted_depth,
-            "hidden_states": dpt_outputs["hidden_states"] if output_hidden_states else None,
-            "attentions": dpt_outputs["attentions"],
-            "knowledge_sources": dpt_outputs["knowledge_sources"],
-        }
-        
-        return output
-            
-    
-    def init_knowledge_source(self, batch_size):
-        ks_tuple = ()
-        for ks in self.knowledge_sources:
-            ks_tuple = ks_tuple + (ks.expand(batch_size, -1, -1),)
-        return ks_tuple
-
-    def freeze_base(self):
-        new_params = ['knowledge_sources', 'pos3d_encoder']
-        for name, param in self.named_parameters():
-            if not any(l in new_params for l in name.split('.')):
-                param.requires_grad=False
-
    
-class SkipDPTMultiviewDepth(DPTForDepthEstimation):
-    def __init__(self, config, num_seq_knowledge_source=400, pos3d_encoding=True, pos3d_depth=5, initialize_ks_with_pos_embed=False, skip_step=4):
+class DPTMultiviewDepth(DPTForDepthEstimation):
+    def __init__(self, config, num_seq_knowledge_source=400, pos3d_encoding=True, pos3d_depth=5, skip_step=4):
         super().__init__(config)
 
         if not hasattr(config, "num_seq_knowledge_source"):
@@ -315,10 +223,7 @@ class SkipDPTMultiviewDepth(DPTForDepthEstimation):
         del self.dpt
         self.dpt = DPTMultiviewModel(config, add_pooling_layer=False, skip=True, skip_step=skip_step)
 
-        if initialize_ks_with_pos_embed:
-             self.knowledge_sources = nn.ParameterList([self.dpt.embeddings.position_embeddings.data for _ in range(0, config.num_hidden_layers, skip_step)])
-        else:
-            self.knowledge_sources = nn.ParameterList([torch.rand(1, config.num_seq_knowledge_source, config.hidden_size) for _ in range(0, config.num_hidden_layers, skip_step)])
+        self.knowledge_sources = nn.ParameterList([torch.rand(1, config.num_seq_knowledge_source, config.hidden_size) for _ in range(0, config.num_hidden_layers, skip_step)])
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -385,15 +290,9 @@ class SkipDPTMultiviewDepth(DPTForDepthEstimation):
         for ks in self.knowledge_sources:
             ks_tuple = ks_tuple + (ks.expand(batch_size, -1, -1),)
         return ks_tuple
-
-    def freeze_base(self):
-        new_params = ['knowledge_sources', 'pos3d_encoder', 'mid_ks_layer']
-        for name, param in self.named_parameters():
-            if not any(l in new_params for l in name.split('.')):
-                param.requires_grad=False
     
 
 if __name__=='__main__':
-    model = SkipDPTMultiviewDepth.from_pretrained("Intel/dpt-large")
+    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large")
     out = model(torch.zeros((1,3,384,384)), points3d=torch.zeros((1,15,384,384)))
     print(out["predicted_depth"].shape)
