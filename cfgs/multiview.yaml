@@ -10,7 +10,7 @@ corruptions: None
 eval_corruptions: None
 n_frames: 4
 img_size: 384
-num_seq_knowledge_source: 400
+num_seq_knowledge_source: 200
 
 epochs: 5
 eval_freq: 500
