@@ -76,6 +76,8 @@ To get the attention ratio figures for the multiview model run this command:
 python scripts/attention_plots.py --config  cfgs/multiview.yaml
 ```
 
+All of the results will be saved in the specified `output_dir` in the configuratoin.
+
 
 ## Group Members
 Alphabetical Order:
