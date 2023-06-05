@@ -42,9 +42,6 @@ omnitools.download point_info rgb depth_zbuffer  \
 ```
 and divide it into train, validation and test folders. Each of these folders should contain 3 folders named `point_info`, `rgb` and `depth_zbuffer`.
 
-## Weights
-You can download the weights for the baseline model and the multiview model from [here](https://drive.google.com/drive/folders/10gdE3fHI-cA4rrYyRYLcJxgXoJ02M0o_?usp=sharing)
-
 
 ## Running the experiments
 Before running the experiments, in the `yaml` files in `cfgs` folder specify the path to train, validation and test dataset. To train the baseline DPT model run the command:
@@ -64,7 +61,7 @@ python run_multiview.py --help
 
 ## Inference
 
-To use the downloaded weights, put them in the `output_dir` folder specified in their corresponding configuration. Similar to the training scripts to test the baseline run the command:
+Similar to the training scripts to test the baseline run the command:
 ```bash
 python scripts/test_baseline_omnidata.py --config  cfgs/baseline.yaml
 ```
