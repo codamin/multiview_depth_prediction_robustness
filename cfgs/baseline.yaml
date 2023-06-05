@@ -1,0 +1,23 @@
+data_path: './data/train'
+eval_data_path: './data/val'
+test_data_path: './data/test'
+
+batch_size: 2
+batch_size_eval: 1
+num_workers: 5
+
+corruptions: None
+eval_corruptions: None
+n_frames: 4
+img_size: 384
+
+epochs: 5
+eval_freq: 500
+save_weight_freq: 2000
+output_dir: './results/baseline'
+device: 'cuda:0'
+
+lr: 0.000005
+loss_fn: 'midas'
+
+log_wandb: False
