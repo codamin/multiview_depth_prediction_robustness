@@ -1,5 +1,7 @@
 data_path: './data/train'
 eval_data_path: './data/val'
+test_data_path: './data/test'
+
 batch_size: 2
 batch_size_eval: 1
 num_workers: 5

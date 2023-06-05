@@ -38,6 +38,8 @@ def load_checkpoint(path, model, optimizer=None):
 
     if optimizer is not None:
         optimizer.load_state_dict(checkpoint['optimizer'])
+
+    print(path, 'loaded')
     
     return checkpoint['epoch']
 

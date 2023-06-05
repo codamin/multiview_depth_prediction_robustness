@@ -1,4 +1,7 @@
-
+# --------------------------------------------------------
+# Based on 3DCC code base
+# https://github.com/EPFL-VILAB/3DCommonCorruptions/tree/main/train/losses
+# --------------------------------------------------------
 
 def compute_grad_norm_losses(losses, model):
     '''

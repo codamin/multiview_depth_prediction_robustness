@@ -1,3 +1,8 @@
+# --------------------------------------------------------
+# Based on huggingface code base
+# https://github.com/huggingface/transformers/blob/main/src/transformers/models/dpt/modeling_dpt.py
+# --------------------------------------------------------
+
 from typing import Optional, Tuple
 
 import torch
@@ -210,7 +215,7 @@ class DPTMultiviewModel(DPTModel):
 
    
 class DPTMultiviewDepth(DPTForDepthEstimation):
-    def __init__(self, config, num_seq_knowledge_source=400, pos3d_encoding=True, pos3d_depth=5, skip_step=4):
+    def __init__(self, config, num_seq_knowledge_source=200, pos3d_encoding=True, pos3d_depth=5, skip_step=4):
         super().__init__(config)
 
         if not hasattr(config, "num_seq_knowledge_source"):

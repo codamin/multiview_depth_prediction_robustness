@@ -1,3 +1,8 @@
+# --------------------------------------------------------
+# Based on 3DCC code base
+# https://github.com/EPFL-VILAB/3DCommonCorruptions/tree/main/train/losses
+# --------------------------------------------------------
+
 import torch
 import torch.nn.functional as F
 from .divergences import jensen_shannon_div, symmetric_kl_div

@@ -17,33 +17,45 @@ import src.checkpoint as checkpoint
 import src.utils as utils
 
 def get_args():
-    config_parser = argparse.ArgumentParser()
+    config_parser = argparse.ArgumentParser(description='YAML Configuration', add_help=True)
     
     config_parser.add_argument('--config', default='', type=str)
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Final Configuration', add_help=True)
 
-    parser.add_argument('--data_path', default=None, type=str)
-    parser.add_argument('--eval_data_path', default=None, type=str)
+    parser.add_argument('--data_path', default=None, type=str,
+                        help='Path to the train dataset')
+    parser.add_argument('--eval_data_path', default=None, type=str,
+                        help='Path to the validation dataset')
+
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--batch_size_eval', default=16, type=int)
     parser.add_argument('--num_workers', default=10, type=int)
 
-    parser.add_argument('--corruptions', default=None, type=str)
-    parser.add_argument('--eval_corruptions', default=None, type=str)
-    parser.add_argument('--n_frames', default=10, type=int)
+    parser.add_argument('--corruptions', default=None, type=str,
+                        help='Specifies the corruption applied to the train data. If set to None then all corruption are randomly selected and applied. \
+                        Available options are [gaussian_noise, gaussian_blur, fog_3d, pixelate, identity (for no corruption)] (default: %(default)s)')
+    parser.add_argument('--eval_corruptions', default=None, type=str,
+                        help='Specifies the corruption applied to the validation data. If set to None then all corruption are randomly selected and applied. \
+                        Available options are [gaussian_noise, gaussian_blur, fog_3d, pixelate, identity (for no corruption)] (default: %(default)s)')
+    parser.add_argument('--n_frames', default=10, type=int,
+                        help='Number of frames loaded per scence for multiview training (default: %(default)s)')
     parser.add_argument('--img_size', default=384, type=int)
 
     parser.add_argument('--epochs', default=100, type=int)
-    parser.add_argument('--eval_freq', default=1000, type=int)
-    parser.add_argument('--save_weight_freq', default=5, type=int)
-    parser.add_argument('--restart', default=True, action='store_true')
+    parser.add_argument('--eval_freq', default=1000, type=int,
+                        help='Frequency of evaluation in steps (default: %(default)s)')
+    parser.add_argument('--save_weight_freq', default=1000, type=int,
+                        help='Frequency of saving weights in steps (default: %(default)s)')
+    parser.add_argument('--restart', default=True, action='store_true',
+                        help='Whether to restart training from the begining. If set to False the training is started from the latest checkpoint (default: %(default)s)')
     parser.add_argument('--no_restart', action='store_false', dest='restart')
     parser.set_defaults(restart=True)
-    parser.add_argument('--output_dir', default='results/')
+    parser.add_argument('--output_dir', default='results/', 
+                        help='Directory to store results and weights for the experiment (default: %(default)s)')
     parser.add_argument('--device', default='cuda')
 
-    parser.add_argument('--lr', type=float, default=1e-3)
+    parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--loss_fn', default='midas', type=str)
 
     parser.add_argument('--log_wandb', default=False, action='store_true')
@@ -53,13 +65,23 @@ def get_args():
     parser.add_argument('--wandb_entity', default="aav", type=str)
     parser.add_argument('--wandb_run_name', default=None, type=str)
 
-    args_config, remaining = config_parser.parse_known_args()
+    try:
+        args_config, remaining = config_parser.parse_known_args()
+    except:
+        parser.print_help()
+        exit()
+    
     if args_config.config:
         with open(args_config.config, 'r') as f:
             cfg = yaml.safe_load(f)
             parser.set_defaults(**cfg)
 
     args = parser.parse_args(remaining)
+
+    for arg in vars(args):
+        attr = getattr(args, arg)
+        if isinstance(attr, str) and attr.lower() == 'none':
+            setattr(args, arg, None)
 
     return args
 
@@ -85,6 +107,25 @@ def create_loss(loss_fn, device):
 
 
 def main(args):
+    device = torch.device(args.device)
+
+
+    if args.log_wandb:
+        # start a new wandb run to track this script
+        wandb.init(
+            # set the wandb project where this run will be logged
+            entity=args.wandb_entity,
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+        
+            # track hyperparameters and run metadata
+            config=args
+        )
+
+    # define the model
+    model = DPTDepth.from_pretrained("Intel/dpt-large").to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-6, amsgrad=True)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.8)
 
     dataloader_train = DataLoader(
                             dataset=RGBDepthDataset(
@@ -110,30 +151,12 @@ def main(args):
                             num_workers=args.num_workers,
                         )
 
-    device = torch.device(args.device)
-
-
-    if args.log_wandb:
-        # start a new wandb run to track this script
-        wandb.init(
-            # set the wandb project where this run will be logged
-            entity=args.wandb_entity,
-            project=args.wandb_project,
-            name=args.wandb_run_name,
-        
-            # track hyperparameters and run metadata
-            config=args
-        )
-
-    # define the model
-    model = DPTDepth.from_pretrained("Intel/dpt-large").to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-6, amsgrad=True)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.8)
-
     # load if any checkpoint exists
+    start_step = None
     start_epoch = 0
     if not args.restart:
-        start_epoch = checkpoint.load_checkpoint(args.output_dir, model, optimizer)
+        start_step = checkpoint.load_checkpoint(args.output_dir, model, optimizer)
+        start_epoch = start_step // len(dataloader_train)
 
     criterion = create_loss(args.loss_fn, device)
 
@@ -142,7 +165,9 @@ def main(args):
     model.train()
     for epoch in range(start_epoch, args.epochs):
         
-        step = epoch * len(dataloader_train)
+        step = epoch * len(dataloader_train) if start_step is None else start_step
+        start_step = None
+        
         if args.log_wandb: wandb.log({f"Epoch": epoch}, step=step)
         for x, depth, _, mask_valid in tqdm(dataloader_train, desc=f"Epoch {epoch}"):
             

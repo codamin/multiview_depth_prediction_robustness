@@ -1,5 +1,7 @@
-data_path: '/scratch/izar/aasadi/dataset/data/train'
-eval_data_path: '/scratch/izar/aasadi/dataset/data/val'
+data_path: './data/train'
+eval_data_path: './data/val'
+test_data_path: './data/test'
+
 batch_size: 2
 batch_size_eval: 1
 num_workers: 5
@@ -12,13 +14,10 @@ img_size: 384
 epochs: 5
 eval_freq: 500
 save_weight_freq: 2000
-output_dir: '/scratch/izar/aasadi/results/baseline-small'
+output_dir: './results/baseline'
 device: 'cuda:0'
 
 lr: 0.000005
 loss_fn: 'midas'
 
-log_wandb: True
-wandb_project: 'multiview-robustness-cs-503'
-wandb_entity: 'aav'
-wandb_run_name: 'baseline-small'
+log_wandb: False

@@ -17,43 +17,58 @@ import src.checkpoint as checkpoint
 import src.utils as utils
 
 def get_args():
-    config_parser = argparse.ArgumentParser()
+    config_parser = argparse.ArgumentParser(description='YAML Configuration', add_help=True)
     
     config_parser.add_argument('--config', default='', type=str)
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Final Configuration', add_help=True)
 
-    parser.add_argument('--data_path', default=None, type=str)
-    parser.add_argument('--eval_data_path', default=None, type=str)
-    parser.add_argument('--test_data_path', default=None, type=str)
+    parser.add_argument('--data_path', default=None, type=str,
+                        help='Path to the train dataset')
+    parser.add_argument('--eval_data_path', default=None, type=str,
+                        help='Path to the validation dataset')
 
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--batch_size_eval', default=16, type=int)
     parser.add_argument('--num_workers', default=10, type=int)
 
-    parser.add_argument('--num_seq_knowledge_source', default=200, type=int)
-    parser.add_argument('--pos3d_encoding', default=True, action='store_true')
+    parser.add_argument('--num_seq_knowledge_source', default=200, type=int,
+                        help='Number of sequences to use as knowledge source at every layer (default: %(default)s)')
+    parser.add_argument('--pos3d_encoding', default=True, action='store_true',
+                        help='Whether to use positional encoding for 3D coordinates (default: %(default)s)')
     parser.add_argument('--no_pos3d_encoding', action='store_false', dest='pos3d_encoding')
     parser.set_defaults(pos3d_encoding=True)
-    parser.add_argument('--pos3d_depth', default=5, type=int)
-    parser.add_argument('--skip_step', default=4, type=int)
+    parser.add_argument('--pos3d_depth', default=5, type=int, 
+                        help='Depth value D for sampling from [0,1] for the 3D coordinates (default: %(default)s)')
+    parser.add_argument('--skip_step', default=4, type=int,
+                        help='Number of layers to skip for injecting the knowledge source (default: %(default)s)')
 
-    parser.add_argument('--corruptions', default=None, type=str)
-    parser.add_argument('--eval_corruptions', default=None, type=str)
-    parser.add_argument('--n_frames', default=10, type=int)
+    parser.add_argument('--corruptions', default=None, type=str,
+                        help='Specifies the corruption applied to the train data. If set to None then all corruption are randomly selected and applied. \
+                        Available options are [gaussian_noise, gaussian_blur, fog_3d, pixelate, identity (for no corruption)] (default: %(default)s)')
+    parser.add_argument('--eval_corruptions', default=None, type=str,
+                        help='Specifies the corruption applied to the validation data. If set to None then all corruption are randomly selected and applied. \
+                        Available options are [gaussian_noise, gaussian_blur, fog_3d, pixelate, identity (for no corruption)] (default: %(default)s)')
+    parser.add_argument('--n_frames', default=10, type=int,
+                        help='Number of frames loaded per scence for multiview training (default: %(default)s)')
     parser.add_argument('--img_size', default=384, type=int)
 
     parser.add_argument('--epochs', default=100, type=int)
-    parser.add_argument('--eval_freq', default=1000, type=int)
-    parser.add_argument('--save_weight_freq', default=5, type=int)
-    parser.add_argument('--restart', default=True, action='store_true')
+    parser.add_argument('--eval_freq', default=1000, type=int,
+                        help='Frequency of evaluation in steps (default: %(default)s)')
+    parser.add_argument('--save_weight_freq', default=1000, type=int,
+                        help='Frequency of saving weights in steps (default: %(default)s)')
+    parser.add_argument('--restart', default=True, action='store_true',
+                        help='Whether to restart training from the begining. If set to False the training is started from the latest checkpoint (default: %(default)s)')
     parser.add_argument('--no_restart', action='store_false', dest='restart')
     parser.set_defaults(restart=True)
-    parser.add_argument('--output_dir', default='results/')
+    parser.add_argument('--output_dir', default='results/', 
+                        help='Directory to store results and weights for the experiment (default: %(default)s)')
     parser.add_argument('--device', default='cuda')
 
-    parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--loss_fn', default='midas', type=str)
+    parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--loss_fn', default='midas', type=str, 
+                        help='Loss function to use. Options are [midas, mse, l1] (default: %(default)s)')
 
     parser.add_argument('--log_wandb', default=False, action='store_true')
     parser.add_argument('--no_log_wandb', action='store_false', dest='log_wandb')
@@ -62,7 +77,12 @@ def get_args():
     parser.add_argument('--wandb_entity', default="aav", type=str)
     parser.add_argument('--wandb_run_name', default=None, type=str)
 
-    args_config, remaining = config_parser.parse_known_args()
+    try:
+        args_config, remaining = config_parser.parse_known_args()
+    except:
+        parser.print_help()
+        exit()
+
     if args_config.config:
         with open(args_config.config, 'r') as f:
             cfg = yaml.safe_load(f)
@@ -70,8 +90,13 @@ def get_args():
 
     else:
         print('No config file specified. Using default arguments.')
-        
-    args = parser.parse_args(remaining)
+
+    args = parser.parse_args(remaining) 
+
+    for arg in vars(args):
+        attr = getattr(args, arg)
+        if isinstance(attr, str) and attr.lower() == 'none':
+            setattr(args, arg, None)
     
     return args
 
@@ -97,6 +122,31 @@ def create_loss(loss_fn, device):
 
 
 def main(args):
+    device = torch.device(args.device)
+
+
+    if args.log_wandb:
+        # start a new wandb run to track this script
+        wandb.init(
+            # set the wandb project where this run will be logged
+            entity=args.wandb_entity,
+            project=args.wandb_project,
+            name=args.wandb_run_name,
+        
+            # track hyperparameters and run metadata
+            config=args
+        )
+
+    # define the model
+    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
+                                            num_seq_knowledge_source=args.num_seq_knowledge_source,
+                                            pos3d_encoding=args.pos3d_encoding,
+                                            pos3d_depth=args.pos3d_depth,
+                                            ).to(device)
+
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-6, amsgrad=True)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.8)
 
     dataloader_train = DataLoader(
                             dataset=RGBDepthDataset(
@@ -123,32 +173,6 @@ def main(args):
                             batch_size=args.batch_size_eval,
                             num_workers=args.num_workers,
                         )
-
-    device = torch.device(args.device)
-
-
-    if args.log_wandb:
-        # start a new wandb run to track this script
-        wandb.init(
-            # set the wandb project where this run will be logged
-            entity=args.wandb_entity,
-            project=args.wandb_project,
-            name=args.wandb_run_name,
-        
-            # track hyperparameters and run metadata
-            config=args
-        )
-
-    # define the model
-    model = DPTMultiviewDepth.from_pretrained("Intel/dpt-large", 
-                                            num_seq_knowledge_source=args.num_seq_knowledge_source,
-                                            pos3d_encoding=args.pos3d_encoding,
-                                            pos3d_depth=args.pos3d_depth,
-                                            ).to(device)
-
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=2e-6, amsgrad=True)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1000, gamma=0.8)
 
     # load if any checkpoint exists
     start_step = None
@@ -286,6 +310,4 @@ if __name__=="__main__":
     args = get_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
-    if args.lr_ext is None:
-        args.lr_ext = args.lr
     main(args)

@@ -53,16 +53,16 @@ def depth_tensor2PIL(x):
 
     return images
 
-def save_images(images, path, name, mode, make_grid=True):
-    os.makedirs(os.path.join(path, 'samples'), exist_ok=True)
+def save_images(images, path, name, mode, make_grid=True, folder='samples'):
+    os.makedirs(os.path.join(path, folder), exist_ok=True)
 
     if make_grid:
         n_images = len(images)
         images = _make_grid(images, rows=math.ceil(n_images/5), cols=5, mode=mode)
-        images.save(os.path.join(path, 'samples', f'{name}.png'))
+        images.save(os.path.join(path, folder, f'{name}.png'))
     else:
         for i, image in enumerate(images):
-            image.save(os.path.join(path, 'samples', f'{name}:{i}.png'))
+            image.save(os.path.join(path, folder, f'{name}:{i}.png'))
 
 def log_images(orig_images, depth_images, predicted_image, wandb, n_images=5):
     n_images = min(len(orig_images), n_images)

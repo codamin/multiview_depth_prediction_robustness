@@ -8,22 +8,21 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 from scipy.spatial.transform import Rotation as R
 
-torch.manual_seed(0)
-np.random.seed(0)
 
-
-def _gaussian_noise(x, scale=0.8, severity_idx=None):
+def gaussian_noise(x, scale=0.8, severity_idx=None):
     if severity_idx is not None:
         scale = [0.2, 0.5, 0.8, 1.1, 1.4][severity_idx]
     return torch.clip(x + torch.randn_like(x) * scale, min=-1, max=1)
 
-def _gaussian_blur(x, sigma=8, severity_idx=None):
+def gaussian_blur(x, sigma=8, severity_idx=None):
     if severity_idx is not None:
         sigma = [2, 5, 8, 11, 14][severity_idx]
+    if sigma == 0:
+        return x
     k = 4 * sigma + 1
     return transforms.functional.gaussian_blur(x, kernel_size=k, sigma=sigma)
 
-def _fog_3d(x, depth, fog_strength=100, severity_idx=None):
+def fog_3d(x, depth, fog_strength=100, severity_idx=None):
     depth = depth/depth.max()
     if severity_idx is not None:
         fog_strength = [50, 75, 100, 125, 150][severity_idx]
@@ -31,22 +30,25 @@ def _fog_3d(x, depth, fog_strength=100, severity_idx=None):
     a = x.mean()
     return x * t + a * (1-t)
 
-def _pixelate(x, resize=8, severity_idx=None):
-    _, h, w = x.shape
+def pixelate(x, resize=8, severity_idx=None):
+    h, w = x.shape[-2:]
     if severity_idx is not None:
         resize = [4, 6, 8, 10, 12][severity_idx]
     x = x[:,::resize,::resize]
-    return F.interpolate(x[None,:], size=(h,w))[0]
-
-def _identity(x, severity_idx=None):
+    if len(x.shape) == 3:
+        return F.interpolate(x[None,:], size=(h,w))[0]
+    elif len(x.shape) == 4:
+         return F.interpolate(x, size=(h,w))
+    
+def identity(x, severity_idx=None):
     return x
 
 corruptions = {
-    'gaussian_noise': _gaussian_noise,
-    'gaussian_blur': _gaussian_blur,
-    'fog_3d': _fog_3d,
-    'pixelate': _pixelate,
-    'identity': _identity,
+    'gaussian_noise': gaussian_noise,
+    'gaussian_blur': gaussian_blur,
+    'fog_3d': fog_3d,
+    'pixelate': pixelate,
+    'identity': identity,
 }
 
 def get_initial_frustum(image_size, depth_size):
@@ -66,6 +68,10 @@ def load_camera_info(path):
 
 class RGBDepthDataset(Dataset):
     def __init__(self, root_dir, transform=None, n_frames=16, image_size=384, depth_size=5, train_set=True):
+
+        torch.manual_seed(0)
+        np.random.seed(0)
+
         self.root_dir = root_dir
         if transform is None:
             self.transform = corruptions
